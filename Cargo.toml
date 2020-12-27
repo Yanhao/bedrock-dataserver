@@ -7,3 +7,21 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+log = "0.4"
+fern = {version = "0.5", features = ["colored"] }
+thiserror = "1.0"
+anyhow = "1.0"
+raft = { git = "https://github.com/tikv/raft-rs", version = "0.6.0-alpha" }
+tokio = {version = "1", features = ["full"] }
+prost = "0.6"
+
+[build-dependencies]
+prost-build = "0.6"
+
+[[bin]]
+name = "dataserver"
+path = "src/dataserver.rs"
+
+#[[bin]]
+#name = "dscli"
+#path = "src/dscli.rs"
