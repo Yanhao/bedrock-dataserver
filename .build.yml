@@ -1,0 +1,11 @@
+image: debian/sid
+packages:
+  - rustc
+sources:
+  - https://git.sr.ht/~moyanhao/bedrock-dataserver
+tasks:
+  - setup: |
+      cd bedrock-dataserver
+  - build: |
+      cd bedrock-dataserver
+      cargo build
