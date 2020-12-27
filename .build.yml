@@ -1,6 +1,7 @@
 image: debian/sid
 packages:
   - rustc
+  - cargo
 sources:
   - https://git.sr.ht/~moyanhao/bedrock-dataserver
 tasks:
