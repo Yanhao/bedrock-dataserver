@@ -15,3 +15,6 @@ message ResponseHeader {
   uint32 error_code = 4;
   uint32 length = 5;
 }
+
+message RequestAppendEntries {
+}

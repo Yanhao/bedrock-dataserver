@@ -281,8 +281,7 @@ impl TcpServer {
     }
 }
 
-
-#[macro_export]
+// #[macro_export]
 macro_rules! define_handler {
     ($fn_name:ident, $typ:ty, $req:tt, $res:ident, $($t:tt)*) => {
         pub fn $fn_name(

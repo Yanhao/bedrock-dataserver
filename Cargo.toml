@@ -14,6 +14,12 @@ anyhow = "1.0"
 raft = { git = "https://github.com/tikv/raft-rs", version = "0.6.0-alpha" }
 tokio = {version = "1", features = ["full"] }
 prost = "0.6"
+serde = { version = "1.0.0", features = ["derive"] }
+lazy_static = "1.4.0"
+toml = "0.5.5"
+get_if_addrs = "0.5.3"
+async-channel = "1.5.1"
+protobuf = "2"
 
 [build-dependencies]
 prost-build = "0.6"

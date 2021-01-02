@@ -1,0 +1,11 @@
+syntax = "proto3";
+package wal_pb;
+
+message Entry {
+}
+
+message Header {
+    uint32 magic = 1;
+    uint64 first_index = 2;
+    uint64 last_index = 3;
+}

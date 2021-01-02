@@ -2,8 +2,6 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum DataServerError {
-
-
     #[error("")]
     FailedToStopTcpServer,
     #[error("")]
@@ -12,6 +10,10 @@ pub enum DataServerError {
     FailedToReceive,
     #[error("")]
     FailedToSend,
+    #[error("")]
+    InvalidToml,
+    #[error("")]
+    FailedToRead,
+    #[error("")]
+    FailedToWrite,
 }
-
-pub type Result<T> = std::result::Result<T, DataServerError>;
