@@ -1,5 +1,3 @@
-#![feature(type_alias_impl_trait)]
-
 mod chunk;
 mod chunk_manager;
 mod config;
