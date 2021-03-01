@@ -92,4 +92,8 @@ impl RaftManager {
 
         Ok(())
     }
+
+    pub async fn notify(&self, chunkid: ChunkID) -> Result<()> {
+        todo!()
+    }
 }

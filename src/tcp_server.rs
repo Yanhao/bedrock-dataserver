@@ -14,10 +14,11 @@ use tokio::sync::{mpsc, Mutex};
 
 use dataserver::message_pb::{RequestHeader, ResponseHeader};
 
+use crate::chunk::ChunkID;
 use crate::error::DataServerError;
 
 const REQUEST_MAGIC: u32 = 0x0;
-const RESPONSE_MAGIC: u32 = 0x0;
+const RESPONSE_MAGIC: u32 = !0x0;
 const ERROR_OK: u32 = 0;
 
 struct Messager {
@@ -91,7 +92,7 @@ impl Messager {
         Ok(buf)
     }
 
-    fn get_responser(&self, addr: SocketAddr, op: u8, serial: u64) -> Result<Responser> {
+    fn create_responser(&self, addr: SocketAddr, op: u8, serial: u64) -> Result<Responser> {
         Ok(Responser {
             addr,
             op,
@@ -168,7 +169,7 @@ struct TcpServer {
     handlers: HashMap<
         u8,
         fn(
-            serial: u64,
+            chunk_id: ChunkID,
             request: Vec<u8>,
             responser: Responser,
         ) -> Box<dyn Future<Output = ()> + Send>,
@@ -237,12 +238,12 @@ impl TcpServer {
 
                         let request_buf = msger.receive_body(header.length as usize).await.unwrap();
                         let handler = handlers.get(&(header.op as u8)).unwrap().clone();
-                        let serial = header.serial;
-                        let responser = msger.get_responser(addr, header.op as u8, serial).unwrap();
+                        let responser = msger.create_responser(addr, header.op as u8, header.serial).unwrap();
+                        let chunk_id = ChunkID::new(header.chunk_id);
 
                         // create new coroutine to handle this request
                         tokio::spawn(async move {
-                            Pin::from(handler(serial, request_buf, responser)).await;
+                            Pin::from(handler(chunk_id, request_buf, responser)).await;
                         });
 
                     }
@@ -272,7 +273,7 @@ impl TcpServer {
         &mut self,
         op: u8,
         fun: fn(
-            serial: u64,
+            chunk_id: ChunkID,
             request: Vec<u8>,
             responser: Responser,
         ) -> Box<dyn Future<Output = ()> + Send>,
@@ -283,8 +284,9 @@ impl TcpServer {
 
 // #[macro_export]
 macro_rules! define_handler {
-    ($fn_name:ident, $typ:ty, $req:tt, $res:ident, $($t:tt)*) => {
+    ($fn_name:ident, $typ:ty, $chunk_id:ident, $req:tt, $res:ident, $($t:tt)*) => {
         pub fn $fn_name(
+            $chunk_id: ChunkID,
             req_buf: Vec<u8>,
             mut $res: Responser,
         ) -> Box<dyn Future<Output = ()> + Send> {
@@ -300,7 +302,11 @@ macro_rules! define_handler {
     }
 }
 
-pub fn ping_handler(_: Vec<u8>, mut res: Responser) -> Box<dyn Future<Output = ()> + Send> {
+pub fn ping_handler(
+    _chunk_id: ChunkID,
+    _: Vec<u8>,
+    mut res: Responser,
+) -> Box<dyn Future<Output = ()> + Send> {
     Box::new(async move {
         debug!("start ping_handler...");
         if let Err(e) = res.reply_ok().await {

@@ -2,19 +2,17 @@ syntax = "proto3";
 package message_pb;
 
 message RequestHeader {
-  uint32 magic = 1;
-  uint64 serial = 2;
-  uint32 op = 3;
-  uint32 length = 4;
+    uint32 magic = 1;
+    uint64 serial = 2;
+    uint32 op = 3;
+    uint64 chunk_id = 4;
+    uint32 length = 5;
 }
 
 message ResponseHeader {
-  uint32 magic = 1;
-  uint64 serial = 2;
-  uint32 op = 3;
-  uint32 error_code = 4;
-  uint32 length = 5;
-}
-
-message RequestAppendEntries {
+    uint32 magic = 1;
+    uint64 serial = 2;
+    uint32 op = 3;
+    uint32 error_code = 4;
+    uint32 length = 5;
 }

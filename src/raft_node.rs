@@ -4,13 +4,14 @@ use std::sync::{Mutex, RwLock};
 
 use anyhow::{bail, Result};
 use log::{debug, info};
-use protobuf::Message as PbMessage;
+use prost::Message as PbMessage;
 use raft::prelude::*;
 use tokio::sync::mpsc;
 
 use crate::chunk::{Chunk, ChunkID};
 use crate::connection::CONNECTIONS;
-use crate::wal::LogStorage;
+use crate::raft_log::RaftLog;
+use crate::journal::Journal;
 
 pub struct RaftNode {
     notifier: mpsc::Sender<ChunkID>,
@@ -20,18 +21,21 @@ pub struct RaftNode {
     tick: Mutex<bool>,
     config_v: Mutex<Vec<ConfChangeV2>>,
 
-    log: LogStorage,
-    raw_node: RwLock<RawNode<LogStorage>>,
-    chunk: Arc<Chunk>,
+    log: RaftLog,
+    raw_node: RwLock<RawNode<RaftLog>>,
+
+    wal: Arc<Journal>,
+    chunk: Arc<Chunk>, // TODO: wrap this within journal
 
     process_lock: Mutex<()>,
 }
 
 impl RaftNode {
     pub fn new(
-        rnode: RawNode<LogStorage>,
+        rnode: RawNode<RaftLog>,
         notifier: mpsc::Sender<ChunkID>,
-        log: LogStorage,
+        log: RaftLog,
+        journal: Arc<Journal>,
         chunk: Arc<Chunk>,
     ) -> Self {
         Self {
@@ -43,6 +47,8 @@ impl RaftNode {
 
             log,
             raw_node: RwLock::new(rnode),
+
+            wal: journal,
             chunk,
 
             process_lock: Mutex::new(()),
@@ -51,6 +57,17 @@ impl RaftNode {
 
     pub fn get_chunkid(&self) -> Result<ChunkID> {
         Ok(self.chunk.id)
+    }
+
+    // pub fn step(&self, msg: Message) -> Result<()> {
+    //     self.raw_node.write().unwrap().step(msg)?;
+    //     Ok(())
+    // }
+
+    pub fn propose(&self, data: Vec<u8>) -> Result<()> {
+        // TODO: write this into wal first
+        // TODO: recreate real data and send it with self.propose_v
+        todo!()
     }
 
     pub async fn process(&self) {
@@ -147,6 +164,7 @@ impl RaftNode {
     async fn send_messages(&self, messages: &Vec<Vec<Message>>) -> Result<()> {
         for i in messages.iter() {
             for m in i.iter() {
+                // TODO: create real message and send out
                 CONNECTIONS.read().await.send(m).await;
             }
         }
@@ -175,7 +193,7 @@ impl RaftNode {
             .apply_conf_change(&cc)
             .unwrap();
 
-        self.log.save_configration(&cs).await?;
+        self.chunk.save_config(&cs).await?;
 
         Ok(())
     }
@@ -196,6 +214,11 @@ impl RaftNode {
         }
     }
 
+    async fn trigger_snapshot(&self) -> Reuslt<()> {
+        // NOTE: just reduce the log length and apply new snapshot
+        todo!()
+    }
+
     pub async fn process_ready(&self, ready: &Ready) {
         // step 1:
         self.save_to_storage(ready.hs(), ready.entries(), ready.snapshot())
@@ -208,5 +231,8 @@ impl RaftNode {
         self.apply_snapshot(ready.snapshot()).await;
 
         self.commit_entries(ready.committed_entries()).await;
+
+        // step 4:
+
     }
 }

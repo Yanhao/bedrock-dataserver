@@ -1,0 +1,21 @@
+syntax = "proto3";
+package service_pb;
+
+service DataServer {
+    // rpc ChunkRead() returns () {}
+    rpc ChunkWrite(ChunkWriteRequest) returns (ChunkWriteReply) {}
+    // rpc ChunkCreate() returns () {}
+    // rpc ChunkRemove() returns () {}
+    // rpc ConfChange() returns () {}
+    // rpc LeaderTransfer() returns () {}
+}
+
+message ChunkWriteRequest {
+    uint64 chunk_id = 1;
+    uint32 offset = 2;
+    uint32 length = 3;
+    bytes data = 4;
+}
+
+message ChunkWriteReply {
+}

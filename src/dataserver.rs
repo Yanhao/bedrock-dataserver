@@ -7,9 +7,12 @@ mod raft_node;
 mod raftnode_manager;
 #[macro_use]
 mod tcp_server;
-mod raft_handlers;
-mod wal;
 mod connection;
+mod journal;
+mod journal_file;
+mod journal_index;
+mod raft_handlers;
+mod raft_log;
 
 fn main() {
     println!("Hello, world!");

@@ -29,7 +29,7 @@ impl ChunkManager {
         Ok(())
     }
 
-    pub fn get(&self, chunkid: ChunkID) -> Result<Arc<Chunk>> {
+    pub fn get_chunk(&self, chunkid: ChunkID) -> Result<Arc<Chunk>> {
         let ret = self.chunks.read().unwrap().get(&chunkid).unwrap().clone();
 
         Ok(ret)
