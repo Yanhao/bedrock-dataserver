@@ -9,9 +9,9 @@ use raft::prelude::*;
 use tokio::sync::mpsc;
 
 use crate::chunk::{Chunk, ChunkID};
-use crate::connection::CONNECTIONS;
-use crate::raft_log::RaftLog;
+// use crate::connection::CONNECTIONS;
 use crate::journal::Journal;
+use crate::raft_log::RaftLog;
 
 pub struct RaftNode {
     notifier: mpsc::Sender<ChunkID>,
@@ -153,11 +153,11 @@ impl RaftNode {
         snap: &Snapshot,
     ) -> Result<()> {
         if let Some(h) = hard_state {
-            self.log.save_hardstate(h).await?;
+            // self.log.save_hardstate(h.to_owned()).await?;
         }
 
-        self.log.append_entries(entries).await?;
-        self.log.save_snapshot(snap).await?;
+        // self.log.append_entries(entries).await?;
+        // self.log.save_snapshot(snap).await?;
         Ok(())
     }
 
@@ -165,7 +165,7 @@ impl RaftNode {
         for i in messages.iter() {
             for m in i.iter() {
                 // TODO: create real message and send out
-                CONNECTIONS.read().await.send(m).await;
+                // CONNECTIONS.read().await.send(m).await;
             }
         }
         Ok(())
@@ -184,7 +184,7 @@ impl RaftNode {
 
     async fn handle_conf_change(&self, entry: &Entry) -> Result<()> {
         let mut cc = ConfChange::default();
-        cc.merge_from_bytes(&entry.data).unwrap();
+        // cc.merge_from_bytes(&entry.data).unwrap();
 
         let cs = self
             .raw_node
@@ -214,7 +214,7 @@ impl RaftNode {
         }
     }
 
-    async fn trigger_snapshot(&self) -> Reuslt<()> {
+    async fn trigger_snapshot(&self) -> Result<()> {
         // NOTE: just reduce the log length and apply new snapshot
         todo!()
     }
@@ -233,6 +233,5 @@ impl RaftNode {
         self.commit_entries(ready.committed_entries()).await;
 
         // step 4:
-
     }
 }

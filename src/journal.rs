@@ -127,67 +127,70 @@ impl Journal {
     }
 
     pub async fn read_at(&mut self, chunk_id: ChunkID, buf: &mut [u8], offset: u64) -> Result<()> {
-        let segs = ChunkManager::get_chunk(chunk_id)
-            .await
-            .unwrap()
-            .journal_index
-            .read()
-            .await
-            .search(offset, buf.len() as u64)?;
-
-        let total_size = buf.len() as u64;
-        let mut need_read_size = buf.len() as u64;
-
-        let mut seg_index: usize = 0;
-        while need_read_size > 0 {
-            let read_len: u64;
-
-            if segs[seg_index].offset <= offset + (offset + buf.len() as u64) - need_read_size {
-                // read from journal
-
-                read_len = segs[seg_index].end_offset_in_chunk()
-                    - (offset + (offset + buf.len() as u64) - need_read_size);
-                let read_offset = segs[seg_index].end_offset_in_journal() - read_len;
-
-                // FIXME: the journal file maybe already deleted here
-                let (j_file, offset_in_journal, jf_lock_handle) =
-                    self.find_journal_file_by_offset(read_offset).await?;
-
-                j_file
-                    .write()
-                    .await
-                    .read_at(
-                        &mut buf[(total_size - need_read_size) as usize..],
-                        read_offset,
-                    )
-                    .await?;
-
-                seg_index += 1;
-            } else {
-                // read from chunk file
-
-                read_len = segs[seg_index].offset
-                    - (offset + (offset + buf.len() as u64) - need_read_size);
-                let read_offset = offset + (offset + buf.len() as u64) - need_read_size;
-
-                ChunkManager::get_chunk(chunk_id)
-                    .await
-                    .unwrap()
-                    .chunk_file
-                    .write()
-                    .await
-                    .read_at(
-                        &mut buf[(total_size - need_read_size) as usize..],
-                        read_offset,
-                    )
-                    .await?;
-            }
-
-            need_read_size -= read_len;
-        }
-
-        Ok(())
+        todo!()
     }
+    // pub async fn read_at(&mut self, chunk_id: ChunkID, buf: &mut [u8], offset: u64) -> Result<()> {
+    //     let segs = ChunkManager::get_chunk(chunk_id)
+    //         .await
+    //         .unwrap()
+    //         .journal_index
+    //         .read()
+    //         .await
+    //         .search(offset, buf.len() as u64)?;
+
+    //     let total_size = buf.len() as u64;
+    //     let mut need_read_size = buf.len() as u64;
+
+    //     let mut seg_index: usize = 0;
+    //     while need_read_size > 0 {
+    //         let read_len: u64;
+
+    //         if segs[seg_index].offset <= offset + (offset + buf.len() as u64) - need_read_size {
+    //             // read from journal
+
+    //             read_len = segs[seg_index].end_offset_in_chunk()
+    //                 - (offset + (offset + buf.len() as u64) - need_read_size);
+    //             let read_offset = segs[seg_index].end_offset_in_journal() - read_len;
+
+    //             // FIXME: the journal file maybe already deleted here
+    //             let (j_file, offset_in_journal, jf_lock_handle) =
+    //                 self.find_journal_file_by_offset(read_offset).await?;
+
+    //             j_file
+    //                 .write()
+    //                 .await
+    //                 .read_at(
+    //                     &mut buf[(total_size - need_read_size) as usize..],
+    //                     read_offset,
+    //                 )
+    //                 .await?;
+
+    //             seg_index += 1;
+    //         } else {
+    //             // read from chunk file
+
+    //             read_len = segs[seg_index].offset
+    //                 - (offset + (offset + buf.len() as u64) - need_read_size);
+    //             let read_offset = offset + (offset + buf.len() as u64) - need_read_size;
+
+    //             ChunkManager::get_chunk(chunk_id)
+    //                 .await
+    //                 .unwrap()
+    //                 .chunk_file
+    //                 .write()
+    //                 .await
+    //                 .read_at(
+    //                     &mut buf[(total_size - need_read_size) as usize..],
+    //                     read_offset,
+    //                 )
+    //                 .await?;
+    //         }
+
+    //         need_read_size -= read_len;
+    //     }
+
+    //     Ok(())
+    // }
 
     async fn try_allocate_new_journal_entry(
         &mut self,
@@ -257,50 +260,60 @@ impl Journal {
         version: u64,
         term: u64,
     ) -> Result<()> {
-        self.inflight_io.fetch_add(1, Ordering::Relaxed);
-        // TODO: defer
-
-        ChunkManager::get_chunk(chunk_id)
-            .await?
-            .write_wait_queue
-            .write()
-            .await
-            .wait(version)
-            .await?;
-
-        let (meta_index, offset_in_journal) = self
-            .try_allocate_new_journal_entry(chunk_id, offset, data.len() as u64, version, term)
-            .await?;
-
-        let mut j_list = self.journal_files.write().await;
-        let j_file = j_list.back_mut().unwrap();
-        j_file
-            .write()
-            .await
-            .write_at(data, offset_in_journal)
-            .await?;
-        j_file.write().await.fsync().await;
-
-        let logic_offset = j_file.read().await.base_offset + offset_in_journal;
-        ChunkManager::get_chunk(chunk_id)
-            .await?
-            .journal_index
-            .write()
-            .await
-            .insert(offset, logic_offset, data.len() as u64, version, term);
-
-        ChunkManager::get_chunk(chunk_id)
-            .await?
-            .write_wait_queue
-            .write()
-            .await
-            .wake_next(version + 1)
-            .await?;
-
-        j_file.write().await.commit_entry(meta_index).await?;
-
-        Ok(())
+        todo!()
     }
+    // pub async fn write_at(
+    //     &mut self,
+    //     chunk_id: ChunkID,
+    //     data: &[u8],
+    //     offset: u64,
+    //     version: u64,
+    //     term: u64,
+    // ) -> Result<()> {
+    //     self.inflight_io.fetch_add(1, Ordering::Relaxed);
+    //     // TODO: defer
+
+    //     ChunkManager::get_chunk(chunk_id)
+    //         .await?
+    //         .write_wait_queue
+    //         .write()
+    //         .await
+    //         .wait(version)
+    //         .await?;
+
+    //     let (meta_index, offset_in_journal) = self
+    //         .try_allocate_new_journal_entry(chunk_id, offset, data.len() as u64, version, term)
+    //         .await?;
+
+    //     let mut j_list = self.journal_files.write().await;
+    //     let j_file = j_list.back_mut().unwrap();
+    //     j_file
+    //         .write()
+    //         .await
+    //         .write_at(data, offset_in_journal)
+    //         .await?;
+    //     j_file.write().await.fsync().await;
+
+    //     let logic_offset = j_file.read().await.base_offset + offset_in_journal;
+    //     ChunkManager::get_chunk(chunk_id)
+    //         .await?
+    //         .journal_index
+    //         .write()
+    //         .await
+    //         .insert(offset, logic_offset, data.len() as u64, version, term);
+
+    //     ChunkManager::get_chunk(chunk_id)
+    //         .await?
+    //         .write_wait_queue
+    //         .write()
+    //         .await
+    //         .wake_next(version + 1)
+    //         .await?;
+
+    //     j_file.write().await.commit_entry(meta_index).await?;
+
+    //     Ok(())
+    // }
 
     pub async fn stop_flush_back(&mut self) {
         self.stop_flush_back_flag.store(true, Ordering::Relaxed);
@@ -312,36 +325,43 @@ impl Journal {
         j_file: Arc<RwLock<JournalFile>>,
         entry_index: u32,
     ) -> Result<()> {
-        let entry = j_file.read().await.get_entry_meta(entry_index).unwrap();
-        let segs = ChunkManager::get_chunk(ChunkID { id: entry.chunk_id })
-            .await?
-            .journal_index
-            .read()
-            .await
-            .search(entry.offset_in_journal, entry.length)
-            .unwrap();
-
-        for i in segs.iter() {
-            let mut buf = vec![0u8; i.length as usize];
-            j_file.write().await.read_at(&mut buf, i.offset);
-
-            let chunk = ChunkManager::get_chunk(ChunkID { id: entry.chunk_id }).await?;
-
-            chunk.chunk_file.write().await.write_at(&buf, 0).await?;
-
-            let mut jf = j_file.write().await;
-            jf.header.checkpoint_index += 1;
-            jf.write_header().await?;
-        }
-
-        ChunkManager::get_chunk(ChunkID { id: entry.chunk_id })
-            .await?
-            .journal_index
-            .write()
-            .await
-            .clear(entry.offset_in_journal, entry.length, entry.version);
-        Ok(())
+        todo!()
     }
+    // pub async fn flush_one_journal_entry(
+    //     &self,
+    //     j_file: Arc<RwLock<JournalFile>>,
+    //     entry_index: u32,
+    // ) -> Result<()> {
+    //     let entry = j_file.read().await.get_entry_meta(entry_index).unwrap();
+    //     let segs = ChunkManager::get_chunk(ChunkID { id: entry.chunk_id })
+    //         .await?
+    //         .journal_index
+    //         .read()
+    //         .await
+    //         .search(entry.offset_in_journal, entry.length)
+    //         .unwrap();
+
+    //     for i in segs.iter() {
+    //         let mut buf = vec![0u8; i.length as usize];
+    //         j_file.write().await.read_at(&mut buf, i.offset);
+
+    //         let chunk = ChunkManager::get_chunk(ChunkID { id: entry.chunk_id }).await?;
+
+    //         chunk.chunk_file.write().await.write_at(&buf, 0).await?;
+
+    //         let mut jf = j_file.write().await;
+    //         jf.header.checkpoint_index += 1;
+    //         jf.write_header().await?;
+    //     }
+
+    //     ChunkManager::get_chunk(ChunkID { id: entry.chunk_id })
+    //         .await?
+    //         .journal_index
+    //         .write()
+    //         .await
+    //         .clear(entry.offset_in_journal, entry.length, entry.version);
+    //     Ok(())
+    // }
 
     pub async fn flush_one_journal_file(&self, j_file: Arc<RwLock<JournalFile>>) {
         if !j_file.read().await.is_need_flush() {
@@ -396,7 +416,7 @@ impl Journal {
                 .load(Ordering::Relaxed)
             {
                 G_JOURNAL.write().await.flush_all().await;
-                tokio::time::delay_for(std::time::Duration::from_secs(1)).await;
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             }
         }));
 

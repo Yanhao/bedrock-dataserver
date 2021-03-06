@@ -7,7 +7,7 @@ use std::sync::Arc;
 use anyhow::{anyhow, bail, Result};
 use regex::Regex;
 use tokio::fs::{File, OpenOptions};
-use tokio::prelude::*;
+// use tokio::prelude::*;
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
 use crate::chunk::ChunkID;
@@ -73,27 +73,27 @@ impl JournalFile {
 
     pub async fn read_at(&mut self, buf: &mut [u8], pos: u64) -> Result<()> {
         let _lg = self.file_lock.lock().await;
-        self.file
-            .seek(SeekFrom::Start(pos))
-            .await
-            .map_err(|_| anyhow!(DataServerError::FailedToSeek))?;
-        self.file
-            .read(buf)
-            .await
-            .map_err(|_| anyhow!(DataServerError::FailedToRead))?;
+        // self.file
+        //     .seek(SeekFrom::Start(pos))
+        //     .await
+        //     .map_err(|_| anyhow!(DataServerError::FailedToSeek))?;
+        // self.file
+        //     .read(buf)
+        //     .await
+        //     .map_err(|_| anyhow!(DataServerError::FailedToRead))?;
 
         Ok(())
     }
     pub async fn write_at(&mut self, data: &[u8], pos: u64) -> Result<()> {
         let _lg = self.file_lock.lock().await;
-        self.file
-            .seek(SeekFrom::Start(pos))
-            .await
-            .map_err(|_| anyhow!(DataServerError::FailedToSeek))?;
-        self.file
-            .write(data)
-            .await
-            .map_err(|_| anyhow!(DataServerError::FailedToWrite))?;
+        // self.file
+        //     .seek(SeekFrom::Start(pos))
+        //     .await
+        //     .map_err(|_| anyhow!(DataServerError::FailedToSeek))?;
+        // self.file
+        //     .write(data)
+        //     .await
+        //     .map_err(|_| anyhow!(DataServerError::FailedToWrite))?;
 
         Ok(())
     }
@@ -183,51 +183,54 @@ impl JournalFile {
     }
 
     pub async fn replay(&mut self) -> Result<()> {
-        let cp /* checkpoint */ = self.header.checkpoint_index;
-
-        if cp == std::u32::MAX {
-            bail!(DataServerError::JournalUnUsed);
-        }
-
-        if cp >= JOURNAL_DEFAULT_MAX_RECORD_COUNT {
-            // TODO: should we just delete this journal file?
-            bail!(DataServerError::JournalFileAllFlushed);
-        }
-
-        let mut new_next_index = self.header.next_entry_index;
-        let mut new_next_data_offset = self.header.next_data_offset;
-        let mut new_committed_index = self.header.committed_index;
-
-        for i in cp..JOURNAL_DEFAULT_MAX_RECORD_COUNT {
-            let meta = self.entry_metas[i as usize];
-            if meta.commit != 1 {
-                continue;
-            }
-            new_committed_index = i;
-
-            ChunkManager::get_chunk(ChunkID { id: meta.chunk_id })
-                .await?
-                .journal_index
-                .write()
-                .await
-                .insert(
-                    meta.offset_in_chunk,
-                    self.base_offset + meta.offset_in_journal,
-                    meta.length,
-                    meta.version,
-                    meta.term,
-                );
-            new_next_index = i + 1;
-            new_next_data_offset = meta.offset_in_journal + meta.length;
-        }
-
-        self.header.next_entry_index = new_next_index;
-        self.header.next_data_offset = new_next_data_offset;
-        self.header.committed_index = new_committed_index;
-        self.first_usable_index = new_next_index;
-
-        Ok(())
+        todo!()
     }
+    // pub async fn replay(&mut self) -> Result<()> {
+    //     let cp /* checkpoint */ = self.header.checkpoint_index;
+
+    //     if cp == std::u32::MAX {
+    //         bail!(DataServerError::JournalUnUsed);
+    //     }
+
+    //     if cp >= JOURNAL_DEFAULT_MAX_RECORD_COUNT {
+    //         // TODO: should we just delete this journal file?
+    //         bail!(DataServerError::JournalFileAllFlushed);
+    //     }
+
+    //     let mut new_next_index = self.header.next_entry_index;
+    //     let mut new_next_data_offset = self.header.next_data_offset;
+    //     let mut new_committed_index = self.header.committed_index;
+
+    //     for i in cp..JOURNAL_DEFAULT_MAX_RECORD_COUNT {
+    //         let meta = self.entry_metas[i as usize];
+    //         if meta.commit != 1 {
+    //             continue;
+    //         }
+    //         new_committed_index = i;
+
+    //         ChunkManager::get_chunk(ChunkID { id: meta.chunk_id })
+    //             .await?
+    //             .journal_index
+    //             .write()
+    //             .await
+    //             .insert(
+    //                 meta.offset_in_chunk,
+    //                 self.base_offset + meta.offset_in_journal,
+    //                 meta.length,
+    //                 meta.version,
+    //                 meta.term,
+    //             );
+    //         new_next_index = i + 1;
+    //         new_next_data_offset = meta.offset_in_journal + meta.length;
+    //     }
+
+    //     self.header.next_entry_index = new_next_index;
+    //     self.header.next_data_offset = new_next_data_offset;
+    //     self.header.committed_index = new_committed_index;
+    //     self.first_usable_index = new_next_index;
+
+    //     Ok(())
+    // }
 
     pub fn is_need_flush(&self) -> bool {
         self.header.committed_index > self.header.checkpoint_index
@@ -268,10 +271,10 @@ impl JournalFile {
                 std::mem::size_of::<JournalHeader>(),
             )
         };
-        if let Err(e) = file.read(data).await {
-            eprintln!("failed to read header from journal");
-            bail!(DataServerError::FailedToRead);
-        }
+        // if let Err(e) = file.read(data).await {
+        //     eprintln!("failed to read header from journal");
+        //     bail!(DataServerError::FailedToRead);
+        // }
 
         let mut metas = Vec::<JournalEntryMeta>::new();
 
@@ -279,9 +282,9 @@ impl JournalFile {
             let offset: u64 =
                 header.meta_offset + i as u64 * std::mem::size_of::<JournalEntryMeta>() as u64;
 
-            file.seek(SeekFrom::Start(offset))
-                .await
-                .map_err(|_| anyhow!(DataServerError::FailedToSeek))?;
+            // file.seek(SeekFrom::Start(offset))
+            //     .await
+            //     .map_err(|_| anyhow!(DataServerError::FailedToSeek))?;
 
             let data = unsafe {
                 slice::from_raw_parts_mut(
@@ -290,10 +293,10 @@ impl JournalFile {
                 )
             };
 
-            if let Err(e) = file.read(data).await {
-                eprintln!("failed to read jorunal record metas");
-                bail!(DataServerError::FailedToRead);
-            }
+            // if let Err(e) = file.read(data).await {
+            //     eprintln!("failed to read jorunal record metas");
+            //     bail!(DataServerError::FailedToRead);
+            // }
         }
 
         let base_offset = Self::parse_base_offset(path.as_ref()).unwrap();
@@ -368,10 +371,10 @@ impl JournalFile {
             )
         };
 
-        if let Err(e) = file.write(journal_header_s).await {
-            eprintln!("failed to write journal header");
-            bail!(DataServerError::FailedToWrite);
-        }
+        // if let Err(e) = file.write(journal_header_s).await {
+        //     eprintln!("failed to write journal header");
+        //     bail!(DataServerError::FailedToWrite);
+        // }
 
         // zero record meta zone
         // unsafe {

@@ -1,3 +1,25 @@
+use std::env::set_current_dir;
+use std::sync::Arc;
+
+use chrono;
+use clap::{App, Arg};
+use fern;
+use fern::colors::{Color, ColoredLevelConfig};
+use log::{debug, error, info};
+use tokio::signal;
+use tokio::sync::RwLock;
+use tonic::transport::Server as GrpcServer;
+use anyhow::Result;
+
+use crate::config::{config_mod_init, CONFIG, CONFIG_DIR};
+use crate::format::Formatter;
+use crate::raft_handlers::register_raft_handlers;
+use crate::raftnode_manager::{init_raftnode_manager, RAFT_MANAGER};
+use crate::rpc_service::RealDataServer;
+use crate::tcp_server::TcpServer;
+
+use dataserver::service_pb::chunk_rpc_server::ChunkRpcServer;
+
 mod chunk;
 mod chunk_manager;
 mod config;
@@ -8,12 +30,166 @@ mod raftnode_manager;
 #[macro_use]
 mod tcp_server;
 mod connection;
+mod format;
 mod journal;
 mod journal_file;
 mod journal_index;
 mod raft_handlers;
 mod raft_log;
+mod rpc_service;
 
-fn main() {
-    println!("Hello, world!");
+fn setup_logger() -> Result<()> {
+    let color = ColoredLevelConfig::new()
+        .info(Color::Green)
+        .warn(Color::Yellow);
+
+    fern::Dispatch::new()
+        .format(move |out, message, record| {
+            out.finish(format_args!(
+                "{}[{}][{}] {}",
+                chrono::Local::now().format("[%Y-%m-%d %H:%M:%S]"),
+                record.target(),
+                color.color(record.level()),
+                message
+            ))
+        })
+        .level(log::LevelFilter::Debug)
+        .chain(std::io::stdout())
+        // .chain(fern::log_file("dataserver.log"))
+        .apply()?;
+    Ok(())
+}
+
+fn create_lock_file(path: String) -> Result<()> {
+    todo!()
+}
+
+fn setup_pid_file(path: String) -> Result<()> {
+    todo!()
+}
+
+#[tokio::main]
+async fn main() {
+    setup_logger().unwrap();
+    let default_config_file = format!("{}/{}", CONFIG_DIR, "dataserver.toml");
+
+    let app = App::new("DataServer")
+        .version("0.0.1")
+        .author("Yanhao Mo <yanhaocs@gmail.com>")
+        .about("A practice project for distributed storage system")
+        .arg(
+            Arg::with_name("config file")
+                .short("c")
+                .long("config")
+                .default_value(&default_config_file)
+                .help("Specify configuration file location"),
+        )
+        .arg(
+            Arg::with_name("format directory")
+                .short("f")
+                .long("format")
+                .takes_value(true)
+                .help("Format data directory"),
+        );
+
+    let matches = app.get_matches();
+    if matches.is_present("format") {
+        println!("fromatting...");
+
+        let f = match Formatter::new(matches.value_of("format").unwrap()) {
+            Err(e) => {
+                eprintln!("failed to create new formatter, err: {}", e);
+                return;
+            }
+            Ok(v) => v,
+        };
+
+        if let Err(e) = f.format() {
+            eprintln!(
+                "failed to format {}, err: {}",
+                matches.value_of("format").unwrap(),
+                e
+            );
+        } else {
+            println!(
+                "successfully formatted {}!",
+                matches.value_of("format").unwrap(),
+            );
+        }
+    }
+
+    info!("starting dataserver...");
+    let config_file = matches.value_of("config").unwrap();
+    debug!("config file: {}", config_file);
+
+    if let Err(e) = config_mod_init(config_file) {
+        error!("failed to initilize configuration, err: {}", e);
+        return;
+    }
+
+    // let work_dir = CONFIG.read().unwrap().work_directory.unwrap();
+    // set_current_dir(work_dir).unwrap();
+    // info!("change working directory to {}", work_dir);
+
+    // if let Err(e) = create_lock_file(work_dir.clone()) {
+    //     error!("faile to create lock file, maybe there is anothor server already running");
+    //     return;
+    // }
+
+    // if let Err(e) = setup_pid_file(work_dir.clone()) {
+    //     error!("failed to setup pid file");
+    //     return;
+    // }
+
+    // if let Err(e) = init_raftnode_manager() {
+    //     error!("failed to initialize raftnode manager, err: {}", e);
+    //     return;
+    // }
+    // let raft_manager = RAFT_MANAGER.clone();
+    // tokio::spawn(async move {
+    //     info!("startting raftnode manager...");
+    //     raft_manager.read().unwrap().start_workers().await;
+    //     info!("stop raftnode manager");
+    // });
+
+    // let mut raft_peer_server = TcpServer::new(
+    //     CONFIG
+    //         .read()
+    //         .unwrap()
+    //         .raft_server_addr
+    //         .unwrap()
+    //         .parse()
+    //         .unwrap(),
+    // );
+    // // register_raft_handlers(&mut raft_peer_server).await;
+
+    // // let r1 = raft_peer_server.clone();
+    // tokio::spawn(async move {
+    //     info!("startting raft peer server...");
+    //     raft_peer_server.run().await;
+    //     info!("stop raft peer server");
+    // });
+
+    // let grpc_server_addr = CONFIG
+    //     .read()
+    //     .unwrap()
+    //     .rpc_server_addr
+    //     .unwrap()
+    //     .parse()
+    //     .unwrap();
+    // let grpc_server = GrpcServer::builder().add_service(ChunkRpcServer::new(RealDataServer::default()));
+
+    // tokio::spawn(async move {
+    //     info!("startting data rpc server...");
+    //     grpc_server.serve(grpc_server_addr).await;
+    //     info!("stop grpc server");
+    // });
+
+    info!("startting heartbeat loop...");
+
+    tokio::spawn(async move {
+        signal::ctrl_c().await.unwrap();
+        // r1.read().await.stop().await;
+        info!("ctrl-c pressed");
+    });
 }

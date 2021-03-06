@@ -12,7 +12,7 @@ use crate::chunk::{Chunk, ChunkID};
 use crate::journal::Journal;
 
 #[derive(Clone)]
-struct ReplicateItem {
+pub struct ReplicateItem {
     pub entry_type: EntryType,
     pub term: u64,
     pub index: u64,
@@ -24,16 +24,13 @@ struct ReplicateItem {
     // data location in wal
     pub wal_nu: u32,
     pub record_index: u32,
-
-    pub commit: bool, // TODO: is this really needed
+    pub commit: bool, // TODO: is this real needed
 }
 
 pub struct RaftLog {
     id: ChunkID,
-
     chunk: Arc<Chunk>,
     journal: Arc<Journal>,
-
     replog: Vec<ReplicateItem>,
 
     first_log_index: AtomicU64,
@@ -46,52 +43,54 @@ impl RaftLog {
     fn new(journal: Arc<Journal>, chunk: Arc<Chunk>) -> Self {
         Self {
             id: chunk.id,
+            first_log_index: AtomicU64::new(chunk.version),
+            last_log_index: AtomicU64::new(chunk.version),
             chunk,
             journal,
 
             replog: Vec::new(),
 
-            first_log_index: AtomicU64::new(chunk.version),
-            last_log_index: AtomicU64::new(chunk.version),
 
             snap: raft::eraftpb::Snapshot::default(),
         }
     }
 
-    fn append_entries(&self, entries: Vec<ReplicateItem>) -> Result<()> {
-        for e in entries.iter() {
-            e.index = self.last_log_index;
-            e.term = self.chunk.raft_state.hard_stat.term;
-            e.commit = false;
+    pub async fn append_entries(&self, entries: Vec<ReplicateItem>) -> Result<()> {
+        // for e in entries.iter() {
+        //     e.index = self.last_log_index.load(Ordering::Relaxed);
+        //     e.term = self.chunk.raft_state.hard_stat.term;
+        //     e.commit = false;
 
-            self.replog.append(e);
-            self.last_log_index += 1;
-        }
+        //     self.replog.append(e);
+        //     self.last_log_index.fetch_add(1, Ordering::Relaxed);
+        // }
 
         Ok(())
     }
 
     fn compact_entries_before(&self, idx: u64) -> Result<()> {
-        let vector_idx = idx - self.first_log_index;
+        // let vector_idx = idx - self.first_log_index;
 
-        self.replog = self.replog[vector_idx as usize..].clone();
+        // self.replog = self.replog[vector_idx as usize..].clone();
 
         Ok(())
     }
 
-    fn save_snapshot(&mut self, snap: raft::eraftpb::Snapshot) -> Result<()> {
+    pub async fn save_snapshot(&mut self, snap: raft::eraftpb::Snapshot) -> Result<()> {
         self.snap = snap;
         Ok(())
     }
 
-    fn save_hardstate(&mut self, hs: HardState) -> Result<()> {
+    pub async fn save_hardstate(&mut self, hs: HardState) -> Result<()> {
         todo!()
     }
 }
 
 impl Storage for RaftLog {
     fn initial_state(&self) -> raft::Result<RaftState> {
-        Ok(self.chunk.raft_state.read().unwrap().clone())
+        todo!()
+        // Ok(())
+        // Ok(self.chunk.raft_state.read().unwrap().clone())
     }
 
     fn entries(
@@ -114,27 +113,27 @@ impl Storage for RaftLog {
         let mut ret = Vec::new();
 
         for i in (low - first)..(high - first) {
-            let item = self.replog[i as usize];
+            // let item = self.replog[i as usize];
 
-            let data = unsafe {
-                slice::from_raw_parts(
-                    &item as *const _ as *const u8,
-                    std::mem::size_of::<ReplicateItem>(),
-                )
-            };
+            // let data = unsafe {
+            //     slice::from_raw_parts(
+            //         &item as *const _ as *const u8,
+            //         std::mem::size_of::<ReplicateItem>(),
+            //     )
+            // };
 
-            let entry = Entry {
-                entry_type: item.entry_type,
-                term: item.term,
-                index: item.index,
-                data: data.to_owned(),
+            // let entry = Entry {
+            //     entry_type: item.entry_type,
+            //     term: item.term,
+            //     index: item.index,
+            //     data: data.to_owned(),
 
-                // the following parts are not used
-                context: vec![],
-                sync_log: false,
-            };
+            //     // the following parts are not used
+            //     context: vec![],
+            //     sync_log: false,
+            // };
 
-            ret.push(entry);
+            // ret.push(entry);
         }
 
         Ok(ret)
@@ -167,5 +166,3 @@ impl Storage for RaftLog {
         Ok(self.snap.clone())
     }
 }
-
-struct RaftLogManager {}

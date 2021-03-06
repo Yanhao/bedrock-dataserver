@@ -10,11 +10,13 @@ edition = "2018"
 log = "0.4"
 fern = {version = "0.5", features = ["colored"] }
 thiserror = "1.0"
+chrono = "0.4"
+clap = "2.33.0"
 anyhow = "1.0"
 raft = { git = "https://github.com/tikv/raft-rs", version = "0.6.0-alpha", features = ["protobuf-codec", "default-logger"] }
 tokio = {version = "1", features = ["full"] }
-prost = "0.6"
-tonic = "0.4"
+prost = "0.7.0"
+tonic = "0.4.0"
 serde = { version = "1.0.0", features = ["derive"] }
 lazy_static = "1.4.0"
 toml = "0.5.5"
@@ -25,8 +27,8 @@ regex = "1"
 
 
 [build-dependencies]
-prost-build = "0.6"
-tonic-build = "0.4"
+prost-build = "0.7.0"
+tonic-build = "0.4.0"
 
 [[bin]]
 name = "dataserver"

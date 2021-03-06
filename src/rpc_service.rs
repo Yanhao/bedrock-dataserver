@@ -1,21 +1,21 @@
 use std::net::SocketAddr;
 
 use anyhow::{bail, Result};
-use tonic::{transport::Server, Reqeust, Response, Status};
+use tonic;
+use tonic::{Request, Response, Status};
 
-use service_pb::DataServer;
+use dataserver::service_pb::chunk_rpc_server::ChunkRpc;
+use dataserver::service_pb::{ChunkWriteReply, ChunkWriteRequest};
 
 #[derive(Debug, Default)]
-struct RealDataServer {}
+pub struct RealDataServer {}
 
 #[tonic::async_trait]
-impl DataServer for RealDataServer {
-    async fn chunk_write(&self, request: Request<()>) -> Result<Response<()>, Status> {}
-}
-
-async fn start_grpc_server(addr: SocketAddr) -> Result<()> {
-    Server::builder()
-        .add_service(DataServer::new(RealDataServer::default()))
-        .server(addr)
-        .await?;
+impl ChunkRpc for RealDataServer {
+    async fn chunk_write(
+        &self,
+        request: Request<ChunkWriteRequest>,
+    ) -> Result<Response<ChunkWriteReply>, Status> {
+        todo!()
+    }
 }

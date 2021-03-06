@@ -45,5 +45,10 @@ pub enum DataServerError {
     InvalidOffset,
 
     #[error("")]
+    PathNotExists,
+    #[error("")]
+    IsDir,
+
+    #[error("")]
     Unknown,
 }

@@ -1,7 +1,7 @@
 syntax = "proto3";
 package service_pb;
 
-service DataServer {
+service ChunkRpc {
     // rpc ChunkRead() returns () {}
     rpc ChunkWrite(ChunkWriteRequest) returns (ChunkWriteReply) {}
     // rpc ChunkCreate() returns () {}

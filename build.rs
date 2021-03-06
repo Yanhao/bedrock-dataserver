@@ -6,6 +6,6 @@ fn main() {
         &["src/"]).unwrap();
 
     tonic_build::compile_protos(
-        &["src/proto/service.proto"]
+        "src/proto/service.proto"
     ).unwrap();
 }

@@ -13,6 +13,7 @@ use crate::error::DataServerError;
 
 // the location of aproject configuration directory.
 pub const CONFIG_DIR: &str = "/etc/aproject";
+
 lazy_static! {
     pub static ref CONFIG: RwLock<Configuration> = Default::default();
     pub static ref SELF_ADDR: RwLock<SocketAddr> =
@@ -37,7 +38,8 @@ impl Default for DiskType {
 
 #[derive(Deserialize, Debug, Clone, Default)]
 pub struct Configuration {
-    pub server_addr: Option<String>,
+    pub raft_server_addr: Option<String>,
+    pub rpc_server_addr: Option<String>,
 
     pub daemon: Option<bool>,
     pub work_directory: Option<String>,
@@ -81,7 +83,7 @@ pub fn config_mod_init(config_file: &str) -> Result<()> {
 
     validate_configuration(&conf)?;
 
-    let addr: SocketAddr = conf.server_addr.clone().unwrap().parse().unwrap();
+    let addr: SocketAddr = conf.raft_server_addr.clone().unwrap().parse().unwrap();
     let ip = get_if_addrs().unwrap()[0].addr.ip();
 
     *SELF_ADDR.write().unwrap() = SocketAddr::new(ip, addr.port());
@@ -107,7 +109,7 @@ mod tests {
         assert_eq!(config1.daemon.unwrap(), true);
         assert_eq!(config1.work_directory.unwrap(), "/");
         // assert_eq!(config1.disk_type.unwrap(), DiskType::SSD);
-        assert_eq!(config1.server_addr.unwrap(), "0.0.0.0:8888");
+        assert_eq!(config1.rpc_server_addr.unwrap(), "0.0.0.0:8888");
 
         println!("{:?}", config1.disk_type);
         println!("{:?}", config1.managers);

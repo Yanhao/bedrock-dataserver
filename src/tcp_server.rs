@@ -162,7 +162,7 @@ impl Responser {
     }
 }
 
-struct TcpServer {
+pub struct TcpServer {
     addr: SocketAddr,
     stop_ch: std::sync::Mutex<Option<mpsc::Sender<()>>>,
 
@@ -177,7 +177,7 @@ struct TcpServer {
 }
 
 impl TcpServer {
-    fn new(addr: SocketAddr) -> Self {
+    pub fn new(addr: SocketAddr) -> Self {
         Self {
             addr,
             stop_ch: std::sync::Mutex::new(None),
@@ -185,7 +185,7 @@ impl TcpServer {
         }
     }
 
-    async fn start(&self) -> Result<()> {
+    pub async fn run(&self) -> Result<()> {
         let listener = match TcpListener::bind(&self.addr).await {
             Ok(v) => v,
             Err(e) => {
@@ -269,7 +269,7 @@ impl TcpServer {
         Ok(())
     }
 
-    fn register_handler(
+    pub fn register_handler(
         &mut self,
         op: u8,
         fun: fn(
