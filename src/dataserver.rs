@@ -1,6 +1,8 @@
 use std::env::set_current_dir;
+use std::path::Path;
 use std::sync::Arc;
 
+use anyhow::Result;
 use chrono;
 use clap::{App, Arg};
 use fern;
@@ -9,7 +11,6 @@ use log::{debug, error, info};
 use tokio::signal;
 use tokio::sync::RwLock;
 use tonic::transport::Server as GrpcServer;
-use anyhow::Result;
 
 use crate::config::{config_mod_init, CONFIG, CONFIG_DIR};
 use crate::format::Formatter;
@@ -41,7 +42,8 @@ mod rpc_service;
 fn setup_logger() -> Result<()> {
     let color = ColoredLevelConfig::new()
         .info(Color::Green)
-        .warn(Color::Yellow);
+        .warn(Color::Yellow)
+        .debug(Color::Cyan);
 
     fern::Dispatch::new()
         .format(move |out, message, record| {
@@ -60,11 +62,17 @@ fn setup_logger() -> Result<()> {
     Ok(())
 }
 
-fn create_lock_file(path: String) -> Result<()> {
-    todo!()
+fn create_lock_file(path: impl AsRef<Path>) -> Result<()> {
+    let lock_path = path.as_ref().to_path_buf().join("LOCK");
+    debug!("lock_path: {:?}", lock_path);
+    std::fs::OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(lock_path)?;
+    Ok(())
 }
 
-fn setup_pid_file(path: String) -> Result<()> {
+fn setup_pid_file(path: impl AsRef<Path>) -> Result<()> {
     todo!()
 }
 
@@ -93,10 +101,10 @@ async fn main() {
         );
 
     let matches = app.get_matches();
-    if matches.is_present("format") {
+    if matches.is_present("format directory") {
         println!("fromatting...");
 
-        let f = match Formatter::new(matches.value_of("format").unwrap()) {
+        let f = match Formatter::new(matches.value_of("format directory").unwrap()) {
             Err(e) => {
                 eprintln!("failed to create new formatter, err: {}", e);
                 return;
@@ -107,19 +115,20 @@ async fn main() {
         if let Err(e) = f.format() {
             eprintln!(
                 "failed to format {}, err: {}",
-                matches.value_of("format").unwrap(),
+                matches.value_of("format directory").unwrap(),
                 e
             );
         } else {
             println!(
                 "successfully formatted {}!",
-                matches.value_of("format").unwrap(),
+                matches.value_of("format directory").unwrap(),
             );
         }
+        return;
     }
 
     info!("starting dataserver...");
-    let config_file = matches.value_of("config").unwrap();
+    let config_file = matches.value_of("config file").unwrap();
     debug!("config file: {}", config_file);
 
     if let Err(e) = config_mod_init(config_file) {
@@ -127,69 +136,82 @@ async fn main() {
         return;
     }
 
-    // let work_dir = CONFIG.read().unwrap().work_directory.unwrap();
-    // set_current_dir(work_dir).unwrap();
-    // info!("change working directory to {}", work_dir);
+    let work_dir = CONFIG
+        .read()
+        .unwrap()
+        .work_directory
+        .as_ref()
+        .unwrap()
+        .to_owned();
+    set_current_dir(&work_dir).unwrap();
+    info!("change working directory to {}", &work_dir);
 
-    // if let Err(e) = create_lock_file(work_dir.clone()) {
-    //     error!("faile to create lock file, maybe there is anothor server already running");
+    if let Err(e) = create_lock_file(&work_dir) {
+        error!("faile to create lock file, err: {}", e);
+        info!("maybe there is anothor server already running");
+        return;
+    }
+
+    // if let Err(e) = setup_pid_file(&work_dir) {
+    //     error!("failed to setup pid file, err: {}", e);
     //     return;
     // }
 
-    // if let Err(e) = setup_pid_file(work_dir.clone()) {
-    //     error!("failed to setup pid file");
-    //     return;
-    // }
-
-    // if let Err(e) = init_raftnode_manager() {
+    // if let Err(e) = init_raftnode_manager().await {
     //     error!("failed to initialize raftnode manager, err: {}", e);
     //     return;
     // }
     // let raft_manager = RAFT_MANAGER.clone();
+
     // tokio::spawn(async move {
     //     info!("startting raftnode manager...");
-    //     raft_manager.read().unwrap().start_workers().await;
+    //     raft_manager.write().await.start_workers().await;
     //     info!("stop raftnode manager");
     // });
 
-    // let mut raft_peer_server = TcpServer::new(
-    //     CONFIG
-    //         .read()
-    //         .unwrap()
-    //         .raft_server_addr
-    //         .unwrap()
-    //         .parse()
-    //         .unwrap(),
-    // );
-    // // register_raft_handlers(&mut raft_peer_server).await;
+    let mut raft_peer_server = TcpServer::new(
+        CONFIG
+            .read()
+            .unwrap()
+            .raft_server_addr
+            .as_ref()
+            .unwrap()
+            .parse()
+            .unwrap(),
+    );
+    register_raft_handlers(&mut raft_peer_server).await;
 
     // // let r1 = raft_peer_server.clone();
-    // tokio::spawn(async move {
-    //     info!("startting raft peer server...");
-    //     raft_peer_server.run().await;
-    //     info!("stop raft peer server");
-    // });
+    tokio::spawn(async move {
+        info!("startting raft peer server...");
+        raft_peer_server.run().await;
+        info!("stop raft peer server");
+    });
 
-    // let grpc_server_addr = CONFIG
-    //     .read()
-    //     .unwrap()
-    //     .rpc_server_addr
-    //     .unwrap()
-    //     .parse()
-    //     .unwrap();
-    // let grpc_server = GrpcServer::builder().add_service(ChunkRpcServer::new(RealDataServer::default()));
+    let grpc_server_addr = CONFIG
+        .read()
+        .unwrap()
+        .rpc_server_addr
+        .as_ref()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let grpc_server =
+        GrpcServer::builder().add_service(ChunkRpcServer::new(RealDataServer::default()));
 
-    // tokio::spawn(async move {
-    //     info!("startting data rpc server...");
-    //     grpc_server.serve(grpc_server_addr).await;
-    //     info!("stop grpc server");
-    // });
+    tokio::spawn(async move {
+        info!("startting data rpc server...");
+        grpc_server.serve(grpc_server_addr).await;
+        info!("stop grpc server");
+    });
 
     info!("startting heartbeat loop...");
 
-    tokio::spawn(async move {
-        signal::ctrl_c().await.unwrap();
-        // r1.read().await.stop().await;
-        info!("ctrl-c pressed");
-    });
+    signal::ctrl_c().await.unwrap();
+    // r1.read().await.stop().await;
+    info!("ctrl-c pressed");
+    if let Err(e) = std::fs::remove_file(work_dir+"/LOCK") {
+        error!("failed to remove lock file, err {}", e);
+    }
+
 }

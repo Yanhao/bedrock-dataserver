@@ -14,7 +14,7 @@ use crate::error::DataServerError;
 use crate::raft_node::RaftNode;
 
 lazy_static! {
-    pub static ref RAFT_MANAGER: Arc<RwLock<RaftManager>> =
+    pub static ref RAFT_MANAGER: Arc<tokio::sync::RwLock<RaftManager>> =
         unsafe { MaybeUninit::uninit().assume_init() };
     pub static ref RAFT_NOTIFIER: Arc<RwLock<async_channel::Sender<ChunkID>>> =
         unsafe { MaybeUninit::uninit().assume_init() };
@@ -84,7 +84,7 @@ impl RaftManager {
                                 }
                             };
 
-                            let raftnode = RAFT_MANAGER.read().unwrap().get(chunkid).unwrap();
+                            let raftnode = RAFT_MANAGER.read().await.get(chunkid).unwrap();
                             raftnode.process();
                         }
                     }
@@ -100,10 +100,10 @@ impl RaftManager {
     }
 }
 
-pub fn init_raftnode_manager() -> Result<()> {
+pub async fn init_raftnode_manager() -> Result<()> {
     let (sender, receiver) = async_channel::unbounded();
 
-    *(RAFT_MANAGER.write().unwrap()) = RaftManager::new(receiver);
+    *(RAFT_MANAGER.write().await) = RaftManager::new(receiver);
     *(RAFT_NOTIFIER.write().unwrap()) = sender;
 
     Ok(())

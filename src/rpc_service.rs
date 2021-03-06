@@ -1,6 +1,7 @@
 use std::net::SocketAddr;
 
 use anyhow::{bail, Result};
+use log::info;
 use tonic;
 use tonic::{Request, Response, Status};
 
@@ -16,6 +17,10 @@ impl ChunkRpc for RealDataServer {
         &self,
         request: Request<ChunkWriteRequest>,
     ) -> Result<Response<ChunkWriteReply>, Status> {
-        todo!()
+        info!("chunk write");
+
+        let reply = ChunkWriteReply::default();
+
+        Ok(Response::new(reply))
     }
 }

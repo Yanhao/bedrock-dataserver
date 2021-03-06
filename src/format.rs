@@ -34,7 +34,7 @@ impl Formatter {
         fs::create_dir(self.directory.join("chunks"))?;
 
         for i in 0..=0xfff {
-            fs::create_dir(self.directory.join(format!("chunks/{:#x}", i)))?;
+            fs::create_dir(self.directory.join(format!("chunks/{:#05x}", i)))?;
         }
 
         // let meta_path = self.directory.join("meta");

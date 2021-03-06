@@ -103,7 +103,7 @@ impl Messager {
 }
 
 pub struct Responser {
-    addr: SocketAddr,
+    pub addr: SocketAddr,
     op: u8,
     serial: u64,
     sender: Arc<Mutex<OwnedWriteHalf>>,
@@ -223,8 +223,7 @@ impl TcpServer {
                             Ok(h) => h,
                             Err(e) => {
                                 match e.downcast_ref::<DataServerError>() {
-                                    Some(DataServerError::FailedToStopTcpServer) => break,
-                                    Some(DataServerError::FailedToStopTcpServer) => break,
+                                    Some(DataServerError::ConnectionClosed) => break,
                                     _ => {
                                         error!("failed to receive message header, err: {}", e);
                                         break;
@@ -302,16 +301,3 @@ macro_rules! define_handler {
     }
 }
 
-pub fn ping_handler(
-    _chunk_id: ChunkID,
-    _: Vec<u8>,
-    mut res: Responser,
-) -> Box<dyn Future<Output = ()> + Send> {
-    Box::new(async move {
-        debug!("start ping_handler...");
-        if let Err(e) = res.reply_ok().await {
-            error!("failed to send reply ok to peer {}, err: {}", res.addr, e);
-        }
-        debug!("end ping_handler");
-    })
-}

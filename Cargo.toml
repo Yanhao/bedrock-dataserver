@@ -13,7 +13,7 @@ thiserror = "1.0"
 chrono = "0.4"
 clap = "2.33.0"
 anyhow = "1.0"
-raft = { git = "https://github.com/tikv/raft-rs", version = "0.6.0-alpha", features = ["protobuf-codec", "default-logger"] }
+raft = { git = "https://github.com/tikv/raft-rs", version = "0.6.0-alpha", default-features = false, features = ["prost-codec", "default-logger"] }
 tokio = {version = "1", features = ["full"] }
 prost = "0.7.0"
 tonic = "0.4.0"

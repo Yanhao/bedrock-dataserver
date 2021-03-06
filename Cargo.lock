@@ -786,18 +786,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "539f2589cd0892cfc07ae25f6e0d2b43440f66b10839e881698f113be28353b2"
 dependencies = [
  "bitflags",
- "protobuf",
- "protobuf-codegen",
- "regex",
-]
-
-[[package]]
-name = "protobuf-codegen"
-version = "2.22.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e8217a1652dbc91d19c509c558234145faed729191a966896414e5889f62d543"
-dependencies = [
- "protobuf",
+ "proc-macro2",
+ "prost-build",
+ "quote",
+ "syn",
 ]
 
 [[package]]
@@ -837,6 +829,8 @@ name = "raft-proto"
 version = "0.6.0-alpha"
 source = "git+https://github.com/tikv/raft-rs#91a60ce417d55d4ca4d96b29963e3e3fa7f7d8d7"
 dependencies = [
+ "lazy_static",
+ "prost",
  "protobuf",
  "protobuf-build",
 ]
