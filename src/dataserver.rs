@@ -210,8 +210,7 @@ async fn main() {
     signal::ctrl_c().await.unwrap();
     // r1.read().await.stop().await;
     info!("ctrl-c pressed");
-    if let Err(e) = std::fs::remove_file(work_dir+"/LOCK") {
+    if let Err(e) = std::fs::remove_file(work_dir + "/LOCK") {
         error!("failed to remove lock file, err {}", e);
     }
-
 }

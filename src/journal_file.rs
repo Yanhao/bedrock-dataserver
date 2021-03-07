@@ -1,4 +1,5 @@
 use std::io::SeekFrom;
+use std::os::unix::io::{AsRawFd, RawFd};
 use std::os::unix::prelude::*;
 use std::path::{Path, PathBuf};
 use std::slice;
@@ -7,7 +8,7 @@ use std::sync::Arc;
 use anyhow::{anyhow, bail, Result};
 use regex::Regex;
 use tokio::fs::{File, OpenOptions};
-// use tokio::prelude::*;
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
 use crate::chunk::ChunkID;
@@ -73,27 +74,27 @@ impl JournalFile {
 
     pub async fn read_at(&mut self, buf: &mut [u8], pos: u64) -> Result<()> {
         let _lg = self.file_lock.lock().await;
-        // self.file
-        //     .seek(SeekFrom::Start(pos))
-        //     .await
-        //     .map_err(|_| anyhow!(DataServerError::FailedToSeek))?;
-        // self.file
-        //     .read(buf)
-        //     .await
-        //     .map_err(|_| anyhow!(DataServerError::FailedToRead))?;
+        self.file
+            .seek(SeekFrom::Start(pos))
+            .await
+            .map_err(|_| anyhow!(DataServerError::FailedToSeek))?;
+        self.file
+            .read(buf)
+            .await
+            .map_err(|_| anyhow!(DataServerError::FailedToRead))?;
 
         Ok(())
     }
     pub async fn write_at(&mut self, data: &[u8], pos: u64) -> Result<()> {
         let _lg = self.file_lock.lock().await;
-        // self.file
-        //     .seek(SeekFrom::Start(pos))
-        //     .await
-        //     .map_err(|_| anyhow!(DataServerError::FailedToSeek))?;
-        // self.file
-        //     .write(data)
-        //     .await
-        //     .map_err(|_| anyhow!(DataServerError::FailedToWrite))?;
+        self.file
+            .seek(SeekFrom::Start(pos))
+            .await
+            .map_err(|_| anyhow!(DataServerError::FailedToSeek))?;
+        self.file
+            .write(data)
+            .await
+            .map_err(|_| anyhow!(DataServerError::FailedToWrite))?;
 
         Ok(())
     }
@@ -125,14 +126,14 @@ impl JournalFile {
         entry_meta.offset_in_journal = self.header.next_data_offset;
 
         if self.header.file_size <= entry_meta.offset_in_journal + size {
-            // unsafe {
-            //     libc::fallocate(
-            //         self.file.as_raw_fd(),
-            //         0,
-            //         self.header.file_size,
-            //         JOURNAL_DEFAULT_EXPAND_SIZE,
-            //     );
-            // }
+            unsafe {
+                libc::fallocate(
+                    self.file.as_raw_fd(),
+                    0,
+                    self.header.file_size as i64,
+                    JOURNAL_DEFAULT_EXPAND_SIZE as i64,
+                );
+            }
 
             self.header.file_size += JOURNAL_DEFAULT_EXPAND_SIZE;
         }
@@ -271,10 +272,10 @@ impl JournalFile {
                 std::mem::size_of::<JournalHeader>(),
             )
         };
-        // if let Err(e) = file.read(data).await {
-        //     eprintln!("failed to read header from journal");
-        //     bail!(DataServerError::FailedToRead);
-        // }
+        if let Err(e) = file.read(data).await {
+            eprintln!("failed to read header from journal");
+            bail!(DataServerError::FailedToRead);
+        }
 
         let mut metas = Vec::<JournalEntryMeta>::new();
 
@@ -282,9 +283,9 @@ impl JournalFile {
             let offset: u64 =
                 header.meta_offset + i as u64 * std::mem::size_of::<JournalEntryMeta>() as u64;
 
-            // file.seek(SeekFrom::Start(offset))
-            //     .await
-            //     .map_err(|_| anyhow!(DataServerError::FailedToSeek))?;
+            file.seek(SeekFrom::Start(offset))
+                .await
+                .map_err(|_| anyhow!(DataServerError::FailedToSeek))?;
 
             let data = unsafe {
                 slice::from_raw_parts_mut(
@@ -293,10 +294,10 @@ impl JournalFile {
                 )
             };
 
-            // if let Err(e) = file.read(data).await {
-            //     eprintln!("failed to read jorunal record metas");
-            //     bail!(DataServerError::FailedToRead);
-            // }
+            if let Err(e) = file.read(data).await {
+                eprintln!("failed to read jorunal record metas");
+                bail!(DataServerError::FailedToRead);
+            }
         }
 
         let base_offset = Self::parse_base_offset(path.as_ref()).unwrap();
@@ -343,9 +344,9 @@ impl JournalFile {
         let file_size =
             JOURNAL_HEADER_RESERVED_SIZE + metas_size as u64 + JOURNAL_FILE_DEFAULT_SIZE;
 
-        // unsafe {
-        //     libc::fallocate(file.as_raw_fd(), 0, 0, file_size);
-        // }
+        unsafe {
+            libc::fallocate(file.as_raw_fd(), 0, 0, file_size as i64);
+        }
 
         let journal_header = JournalHeader {
             magic: JOURNAL_MAGIC,
@@ -371,20 +372,20 @@ impl JournalFile {
             )
         };
 
-        // if let Err(e) = file.write(journal_header_s).await {
-        //     eprintln!("failed to write journal header");
-        //     bail!(DataServerError::FailedToWrite);
-        // }
+        if let Err(e) = file.write(journal_header_s).await {
+            eprintln!("failed to write journal header");
+            bail!(DataServerError::FailedToWrite);
+        }
 
         // zero record meta zone
-        // unsafe {
-        //     libc::fallocate(
-        //         file.as_raw_fd(),
-        //         0,
-        //         JOURNAL_HEADER_RESERVED_SIZE,
-        //         metas_size,
-        //     );
-        // }
+        unsafe {
+            libc::fallocate(
+                file.as_raw_fd(),
+                0,
+                JOURNAL_HEADER_RESERVED_SIZE as i64,
+                metas_size as i64,
+            );
+        }
 
         file.sync_all();
 

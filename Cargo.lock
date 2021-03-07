@@ -212,6 +212,7 @@ dependencies = [
  "fern",
  "get_if_addrs",
  "lazy_static",
+ "libc",
  "log",
  "prost",
  "prost-build",

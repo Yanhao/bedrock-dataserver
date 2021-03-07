@@ -50,7 +50,6 @@ impl RaftLog {
 
             replog: Vec::new(),
 
-
             snap: raft::eraftpb::Snapshot::default(),
         }
     }

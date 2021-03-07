@@ -24,6 +24,7 @@ get_if_addrs = "0.5.3"
 async-channel = "1.5.1"
 protobuf = "2"
 regex = "1"
+libc = "0.2"
 
 
 [build-dependencies]
