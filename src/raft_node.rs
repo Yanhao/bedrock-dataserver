@@ -161,12 +161,10 @@ impl RaftNode {
         Ok(())
     }
 
-    async fn send_messages(&self, messages: &Vec<Vec<Message>>) -> Result<()> {
+    async fn send_messages(&self, messages: &[Message]) -> Result<()> {
         for i in messages.iter() {
-            for m in i.iter() {
-                // TODO: create real message and send out
-                // CONNECTIONS.read().await.send(m).await;
-            }
+            // TODO: create real message and send out
+            // CONNECTIONS.read().await.send(m).await;
         }
         Ok(())
     }
@@ -202,7 +200,7 @@ impl RaftNode {
         for i in entries.iter() {
             // process i
             if i.data.is_empty() {
-                // Emtpy entry, when the peer becomes Leader it will send an empty entry.
+                // Empty entry, when the peer becomes Leader it will send an empty entry.
                 continue;
             }
 

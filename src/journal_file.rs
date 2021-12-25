@@ -127,12 +127,12 @@ impl JournalFile {
 
         if self.header.file_size <= entry_meta.offset_in_journal + size {
             unsafe {
-                libc::fallocate(
-                    self.file.as_raw_fd(),
-                    0,
-                    self.header.file_size as i64,
-                    JOURNAL_DEFAULT_EXPAND_SIZE as i64,
-                );
+                // libc::fallocate(
+                //     self.file.as_raw_fd(),
+                //     0,
+                //     self.header.file_size as i64,
+                //     JOURNAL_DEFAULT_EXPAND_SIZE as i64,
+                // );
             }
 
             self.header.file_size += JOURNAL_DEFAULT_EXPAND_SIZE;
@@ -345,7 +345,7 @@ impl JournalFile {
             JOURNAL_HEADER_RESERVED_SIZE + metas_size as u64 + JOURNAL_FILE_DEFAULT_SIZE;
 
         unsafe {
-            libc::fallocate(file.as_raw_fd(), 0, 0, file_size as i64);
+            // libc::fallocate(file.as_raw_fd(), 0, 0, file_size as i64);
         }
 
         let journal_header = JournalHeader {
@@ -379,12 +379,12 @@ impl JournalFile {
 
         // zero record meta zone
         unsafe {
-            libc::fallocate(
-                file.as_raw_fd(),
-                0,
-                JOURNAL_HEADER_RESERVED_SIZE as i64,
-                metas_size as i64,
-            );
+            // libc::fallocate(
+            //     file.as_raw_fd(),
+            //     0,
+            //     JOURNAL_HEADER_RESERVED_SIZE as i64,
+            //     metas_size as i64,
+            // );
         }
 
         file.sync_all();

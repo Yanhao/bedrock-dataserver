@@ -3,7 +3,6 @@ use std::future::Future;
 use anyhow::Result;
 use log::{debug, error, info};
 use prost::Message as PbMessage;
-
 use raft::prelude::Message;
 
 use crate::chunk::ChunkID;

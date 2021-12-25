@@ -102,7 +102,7 @@ async fn main() {
 
     let matches = app.get_matches();
     if matches.is_present("format directory") {
-        println!("fromatting...");
+        println!("formatting...");
 
         let f = match Formatter::new(matches.value_of("format directory").unwrap()) {
             Err(e) => {
@@ -132,7 +132,7 @@ async fn main() {
     debug!("config file: {}", config_file);
 
     if let Err(e) = config_mod_init(config_file) {
-        error!("failed to initilize configuration, err: {}", e);
+        error!("failed to initialize configuration, err: {}", e);
         return;
     }
 
@@ -147,8 +147,8 @@ async fn main() {
     info!("change working directory to {}", &work_dir);
 
     if let Err(e) = create_lock_file(&work_dir) {
-        error!("faile to create lock file, err: {}", e);
-        info!("maybe there is anothor server already running");
+        error!("failed to create lock file, err: {}", e);
+        info!("maybe there is another server already running");
         return;
     }
 
@@ -164,7 +164,7 @@ async fn main() {
     // let raft_manager = RAFT_MANAGER.clone();
 
     // tokio::spawn(async move {
-    //     info!("startting raftnode manager...");
+    //     info!("starting raftnode manager...");
     //     raft_manager.write().await.start_workers().await;
     //     info!("stop raftnode manager");
     // });
@@ -183,7 +183,7 @@ async fn main() {
 
     // // let r1 = raft_peer_server.clone();
     tokio::spawn(async move {
-        info!("startting raft peer server...");
+        info!("starting raft peer server...");
         raft_peer_server.run().await;
         info!("stop raft peer server");
     });
@@ -200,12 +200,12 @@ async fn main() {
         GrpcServer::builder().add_service(ChunkRpcServer::new(RealDataServer::default()));
 
     tokio::spawn(async move {
-        info!("startting data rpc server...");
-        grpc_server.serve(grpc_server_addr).await;
+        info!("starting data rpc server...");
+        grpc_server.serve(grpc_server_addr).await.unwrap();
         info!("stop grpc server");
     });
 
-    info!("startting heartbeat loop...");
+    info!("starting heartbeat loop...");
 
     signal::ctrl_c().await.unwrap();
     // r1.read().await.stop().await;

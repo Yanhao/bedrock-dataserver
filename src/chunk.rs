@@ -85,9 +85,9 @@ impl Chunk {
             .open(chunk_path)
             .await?;
 
-        unsafe {
-            libc::fallocate(chunk_file.as_raw_fd(), 0, 0, DEFAULT_CHUNK_SIZE);
-        }
+        // unsafe {
+        //     libc::fallocate(chunk_file.as_raw_fd(), 0, 0, DEFAULT_CHUNK_SIZE);
+        // }
 
         let mut peers_u64: [u64; 5] = [0; 5];
         for (i, x) in peers.iter().enumerate() {
