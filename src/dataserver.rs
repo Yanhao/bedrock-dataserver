@@ -5,6 +5,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use chrono;
 use clap::{App, Arg};
+use dataserver::service_pb::data_service_server::{DataService, DataServiceServer};
 use fern;
 use fern::colors::{Color, ColoredLevelConfig};
 use log::{debug, error, info};
@@ -18,8 +19,6 @@ use crate::raft_handlers::register_raft_handlers;
 use crate::raftnode_manager::{init_raftnode_manager, RAFT_MANAGER};
 use crate::rpc_service::RealDataServer;
 use crate::tcp_server::TcpServer;
-
-use dataserver::service_pb::chunk_rpc_server::ChunkRpcServer;
 
 mod chunk;
 mod chunk_manager;
@@ -197,7 +196,7 @@ async fn main() {
         .parse()
         .unwrap();
     let grpc_server =
-        GrpcServer::builder().add_service(ChunkRpcServer::new(RealDataServer::default()));
+        GrpcServer::builder().add_service(DataServiceServer::new(RealDataServer::default()));
 
     tokio::spawn(async move {
         info!("starting data rpc server...");

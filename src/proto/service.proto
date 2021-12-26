@@ -1,21 +1,94 @@
 syntax = "proto3";
 package service_pb;
 
-service ChunkRpc {
-    // rpc ChunkRead() returns () {}
-    rpc ChunkWrite(ChunkWriteRequest) returns (ChunkWriteReply) {}
-    // rpc ChunkCreate() returns () {}
-    // rpc ChunkRemove() returns () {}
-    // rpc ConfChange() returns () {}
-    // rpc LeaderTransfer() returns () {}
+message SplitShardRequest {
+}
+message SplitShardResponse {
+}
+message MergeShardRequest {
+}
+message MergeShardResponse {
+}
+message CreateShardRequest {
+}
+message CreateShardResponse {
+}
+message DeleteShardRequest {
+}
+message DeleteShardResponse {
+}
+message TransferShardRequest {
+}
+message TransferShardResponse {
+}
+message AddShardReplicaRequest {
+}
+message AddShardReplicaResponse {
+}
+message DeleteShardReplicaRequest {
+}
+message DeleteShardReplicaResponse {
+}
+message TransferShardLeaderRequest {
+}
+message TransferShardLeaderResponse {
+}
+message LockShardRequest {
+}
+message LockShardResponse {
+}
+message UnlockShardRequest {
+}
+message UnlockShardResponse {
+}
+message ShardReadRequest {
+}
+message ShardReadResponse {
+}
+message ShardWriteRequest {
+}
+message ShardWriteResponse {
+}
+message ShardWriteReplicaRequest {
+}
+message ShardWriteReplicaResponse {
+}
+message ShardInstallSnapRequest {
+}
+message ShardInstallSnapResponse {
+}
+message ShardRepairRequest {
+}
+message ShardRepairResponse {
+}
+message DataServerJoinRequest {
+}
+message DataServerJoinResponse {
+}
+message DataServerLeaveRequest {
+}
+message DataServerLeaveResponse {
 }
 
-message ChunkWriteRequest {
-    uint64 chunk_id = 1;
-    uint32 offset = 2;
-    uint32 length = 3;
-    bytes data = 4;
-}
+service DataService {
+    // rpc SplitShard(SplitShardRequest) returns (SplitShardResponse) {}
+    // rpc MergeShard(MergeShardRequest) returns (MergeShardResponse) {}
+    // rpc CreateShard(CreateShardRequest) returns (CreateShardResponse) {}
+    // rpc DeleteShard(DeleteShardRequest) returns (DeleteShardResponse) {}
+    // rpc TransferShard(TransferShardRequest) returns (TransferShardResponse) {}
+    // rpc AddShardReplica(AddShardReplicaRequest) returns (AddShardReplicaResponse) {}
+    // rpc DeleteShardReplica(DeleteShardReplicaRequest) returns (DeleteShardReplicaResponse) {}
+    // rpc TransferShardLeader(TransferShardLeaderRequest) returns (TransferShardLeaderResponse) {}
+    // rpc LockShard(LockShardRequest) returns (LockShardResponse) {}
+    // rpc UnlockShard(UnlockShardRequest) returns (UnlockShardResponse) {}
 
-message ChunkWriteReply {
+    rpc ShardRead(ShardReadRequest) returns (ShardReadResponse) {}
+    rpc ShardWrite(ShardWriteRequest) returns (ShardWriteResponse) {}
+
+    // rpc ShardWriteReplica(ShardWriteReplicaRequest) returns (ShardWriteReplicaResponse) {}
+    // rpc ShardInstallSnap(ShardInstallSnapRequest) returns (ShardInstallSnapResponse) {}
+    // rpc ShardRepair(ShardRepairRequest) returns (ShardRepairResponse) {}
+
+    // rpc DataServerJoin(DataServerJoinRequest) returns (DataServerJoinResponse) {}
+    // rpc DataServerLeave(DataServerLeaveRequest) returns (DataServerLeaveResponse) {}
 }

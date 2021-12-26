@@ -5,21 +5,34 @@ use log::info;
 use tonic;
 use tonic::{Request, Response, Status};
 
-use dataserver::service_pb::chunk_rpc_server::ChunkRpc;
-use dataserver::service_pb::{ChunkWriteReply, ChunkWriteRequest};
+use dataserver::service_pb::data_service_server::DataService;
+use dataserver::service_pb::{
+    ShardReadRequest, ShardReadResponse, ShardWriteRequest, ShardWriteResponse,
+};
 
 #[derive(Debug, Default)]
 pub struct RealDataServer {}
 
 #[tonic::async_trait]
-impl ChunkRpc for RealDataServer {
-    async fn chunk_write(
+impl DataService for RealDataServer {
+    async fn shard_read(
         &self,
-        request: Request<ChunkWriteRequest>,
-    ) -> Result<Response<ChunkWriteReply>, Status> {
-        info!("chunk write");
+        request: Request<ShardReadRequest>,
+    ) -> Result<Response<ShardReadResponse>, Status> {
+        info!("shard read");
 
-        let reply = ChunkWriteReply::default();
+        let reply = ShardReadResponse::default();
+
+        Ok(Response::new(reply))
+    }
+
+    async fn shard_write(
+        &self,
+        request: Request<ShardWriteRequest>,
+    ) -> Result<Response<ShardWriteResponse>, Status> {
+        info!("shard write");
+
+        let reply = ShardWriteResponse::default();
 
         Ok(Response::new(reply))
     }
