@@ -71,24 +71,24 @@ message DataServerLeaveResponse {
 }
 
 service DataService {
-    // rpc SplitShard(SplitShardRequest) returns (SplitShardResponse) {}
-    // rpc MergeShard(MergeShardRequest) returns (MergeShardResponse) {}
-    // rpc CreateShard(CreateShardRequest) returns (CreateShardResponse) {}
-    // rpc DeleteShard(DeleteShardRequest) returns (DeleteShardResponse) {}
-    // rpc TransferShard(TransferShardRequest) returns (TransferShardResponse) {}
-    // rpc AddShardReplica(AddShardReplicaRequest) returns (AddShardReplicaResponse) {}
-    // rpc DeleteShardReplica(DeleteShardReplicaRequest) returns (DeleteShardReplicaResponse) {}
-    // rpc TransferShardLeader(TransferShardLeaderRequest) returns (TransferShardLeaderResponse) {}
-    // rpc LockShard(LockShardRequest) returns (LockShardResponse) {}
-    // rpc UnlockShard(UnlockShardRequest) returns (UnlockShardResponse) {}
+    // rpc SplitShard(SplitShardRequest) returns (SplitShardResponse);
+    // rpc MergeShard(MergeShardRequest) returns (MergeShardResponse);
+    // rpc CreateShard(CreateShardRequest) returns (CreateShardResponse);
+    // rpc DeleteShard(DeleteShardRequest) returns (DeleteShardResponse);
+    // rpc TransferShard(TransferShardRequest) returns (TransferShardResponse);
+    // rpc AddShardReplica(AddShardReplicaRequest) returns (AddShardReplicaResponse);
+    // rpc DeleteShardReplica(DeleteShardReplicaRequest) returns (DeleteShardReplicaResponse);
+    // rpc TransferShardLeader(TransferShardLeaderRequest) returns (TransferShardLeaderResponse);
+    // rpc LockShard(LockShardRequest) returns (LockShardResponse);
+    // rpc UnlockShard(UnlockShardRequest) returns (UnlockShardResponse);
 
-    rpc ShardRead(ShardReadRequest) returns (ShardReadResponse) {}
-    rpc ShardWrite(ShardWriteRequest) returns (ShardWriteResponse) {}
+    rpc ShardRead(ShardReadRequest) returns (ShardReadResponse);
+    rpc ShardWrite(ShardWriteRequest) returns (ShardWriteResponse);
 
-    // rpc ShardWriteReplica(ShardWriteReplicaRequest) returns (ShardWriteReplicaResponse) {}
-    // rpc ShardInstallSnap(ShardInstallSnapRequest) returns (ShardInstallSnapResponse) {}
-    // rpc ShardRepair(ShardRepairRequest) returns (ShardRepairResponse) {}
+    // rpc ShardWriteReplica(ShardWriteReplicaRequest) returns (ShardWriteReplicaResponse);
+    // rpc ShardInstallSnap(ShardInstallSnapRequest) returns (ShardInstallSnapResponse);
+    // rpc ShardRepair(ShardRepairRequest) returns (ShardRepairResponse);
 
-    // rpc DataServerJoin(DataServerJoinRequest) returns (DataServerJoinResponse) {}
-    // rpc DataServerLeave(DataServerLeaveRequest) returns (DataServerLeaveResponse) {}
+    // rpc DataServerJoin(DataServerJoinRequest) returns (DataServerJoinResponse);
+    // rpc DataServerLeave(DataServerLeaveRequest) returns (DataServerLeaveResponse);
 }
