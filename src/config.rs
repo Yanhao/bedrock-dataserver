@@ -12,7 +12,7 @@ use serde::{self, Deserialize};
 use crate::error::DataServerError;
 
 // the location of aproject configuration directory.
-pub const CONFIG_DIR: &str = "/etc/aproject";
+pub const CONFIG_DIR: &str = "/etc/bedrock-dataserver";
 
 lazy_static! {
     pub static ref CONFIG: RwLock<Configuration> = Default::default();

@@ -8,7 +8,23 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="997e849c-65d9-4db1-aea1-781dcb19c5e4" name="Default Changelist" comment="">
+      <change afterPath="$PROJECT_DIR$/src/shard/mod.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/shard/shard.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/shard/shard_manager.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/chunk.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/chunk/chunk.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/chunk_manager.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/chunk/chunk_manager.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/config.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/config.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/dataserver.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dataserver.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/journal.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/journal/journal.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/journal_file.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/journal/journal_file.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/journal_index.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/journal/journal_index.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/proto/service.proto" beforeDir="false" afterPath="$PROJECT_DIR$/src/proto/service.proto" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/raft_handlers.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/mraft/raft_handlers.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/raft_log.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/mraft/raft_log.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/raft_node.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/mraft/raft_node.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/raftnode_manager.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/mraft/raftnode_manager.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/tcp_server.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/net/tcp_server.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -28,6 +44,9 @@
   <component name="MacroExpansionManager">
     <option name="directoryName" value="r159ts9z" />
   </component>
+  <component name="MarkdownSettingsMigration">
+    <option name="stateVersion" value="1" />
+  </component>
   <component name="ProblemsViewState">
     <option name="selectedIndex" value="1" />
   </component>
@@ -36,20 +55,16 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">
-    <property name="RunOnceActivity.OpenProjectViewOnStart" value="true" />
-    <property name="RunOnceActivity.ShowReadmeOnStart" value="true" />
-    <property name="WebServerToolWindowFactoryState" value="false" />
-    <property name="android.sdk.path" value="$USER_HOME$/Library/Android/sdk" />
-    <property name="aspect.path.notification.shown" value="true" />
-    <property name="go.import.settings.migrated" value="true" />
-    <property name="last_opened_file_path" value="$PROJECT_DIR$" />
-    <property name="nodejs_package_manager_path" value="npm" />
-    <property name="org.rust.cargo.project.model.PROJECT_DISCOVERY" value="true" />
-    <property name="project.structure.last.edited" value="SDKs" />
-    <property name="project.structure.proportion" value="0.0" />
-    <property name="project.structure.side.proportion" value="0.2" />
-  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "RunOnceActivity.OpenProjectViewOnStart": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "WebServerToolWindowFactoryState": "false",
+    "last_opened_file_path": "/Users/bytedance/code/bedrock/bedrock-dataserver",
+    "org.rust.cargo.project.model.PROJECT_DISCOVERY": "true",
+    "settings.editor.selected.configurable": "preferences.pluginManager"
+  }
+}]]></component>
   <component name="RustProjectSettings">
     <option name="toolchainHomeDirectory" value="$USER_HOME$/.cargo/bin" />
     <option name="version" value="2" />
@@ -68,6 +83,7 @@
       <workItem from="1609039677405" duration="16288000" />
       <workItem from="1609126776952" duration="4290000" />
       <workItem from="1609326062579" duration="348000" />
+      <workItem from="1649847826053" duration="1919000" />
     </task>
     <servers />
   </component>
@@ -84,6 +100,5 @@
         </entry>
       </map>
     </option>
-    <option name="oldMeFiltersMigrated" value="true" />
   </component>
 </project>

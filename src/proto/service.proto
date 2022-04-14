@@ -1,6 +1,8 @@
 syntax = "proto3";
 
-import "google/protobuf/empty.proto";
+// import "google/protobuf/empty.proto";
+
+option go_package = "sr.ht/moyanhao/bedrock-metaserver/dataserver/api";
 
 package service_pb;
 
@@ -19,6 +21,10 @@ message CreateShardResponse {
 message DeleteShardRequest {
 }
 message DeleteShardResponse {
+}
+message PullShardDataRequest {
+}
+message PullShardDataResponse {
 }
 message TransferShardRequest {
 }
@@ -76,8 +82,9 @@ message DataServerLeaveResponse {
 service DataService {
     // rpc SplitShard(SplitShardRequest) returns (SplitShardResponse);
     // rpc MergeShard(MergeShardRequest) returns (MergeShardResponse);
-    // rpc CreateShard(CreateShardRequest) returns (CreateShardResponse);
-    // rpc DeleteShard(DeleteShardRequest) returns (DeleteShardResponse);
+    rpc CreateShard(CreateShardRequest) returns (CreateShardResponse);
+    rpc DeleteShard(DeleteShardRequest) returns (DeleteShardResponse);
+    // rpc PullShardData(PullShardDataRequest) returns (PullShardDataResponse);
     // rpc TransferShard(TransferShardRequest) returns (TransferShardResponse);
     // rpc AddShardReplica(AddShardReplicaRequest) returns (AddShardReplicaResponse);
     // rpc DeleteShardReplica(DeleteShardReplicaRequest) returns (DeleteShardReplicaResponse);
@@ -85,8 +92,8 @@ service DataService {
     // rpc LockShard(LockShardRequest) returns (LockShardResponse);
     // rpc UnlockShard(UnlockShardRequest) returns (UnlockShardResponse);
 
-    rpc ShardRead(ShardReadRequest) returns (ShardReadResponse);
-    rpc ShardWrite(ShardWriteRequest) returns (ShardWriteResponse);
+    // rpc ShardRead(ShardReadRequest) returns (ShardReadResponse);
+    // rpc ShardWrite(ShardWriteRequest) returns (ShardWriteResponse);
 
     // rpc ShardWriteReplica(ShardWriteReplicaRequest) returns (ShardWriteReplicaResponse);
     // rpc ShardInstallSnap(ShardInstallSnapRequest) returns (ShardInstallSnapResponse);

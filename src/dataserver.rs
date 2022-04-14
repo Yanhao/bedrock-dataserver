@@ -15,28 +15,16 @@ use tonic::transport::Server as GrpcServer;
 
 use crate::config::{config_mod_init, CONFIG, CONFIG_DIR};
 use crate::format::Formatter;
-use crate::raft_handlers::register_raft_handlers;
-use crate::raftnode_manager::{init_raftnode_manager, RAFT_MANAGER};
 use crate::rpc_service::RealDataServer;
-use crate::tcp_server::TcpServer;
 
-mod chunk;
-mod chunk_manager;
+// mod chunk;
 mod config;
 mod error;
 mod heartbeat;
-mod raft_node;
-mod raftnode_manager;
-#[macro_use]
-mod tcp_server;
-mod connection;
 mod format;
-mod journal;
-mod journal_file;
-mod journal_index;
-mod raft_handlers;
-mod raft_log;
+// mod journal;
 mod rpc_service;
+// mod shard;
 
 fn setup_logger() -> Result<()> {
     let color = ColoredLevelConfig::new()
@@ -168,24 +156,24 @@ async fn main() {
     //     info!("stop raftnode manager");
     // });
 
-    let mut raft_peer_server = TcpServer::new(
-        CONFIG
-            .read()
-            .unwrap()
-            .raft_server_addr
-            .as_ref()
-            .unwrap()
-            .parse()
-            .unwrap(),
-    );
-    register_raft_handlers(&mut raft_peer_server).await;
+    // let mut raft_peer_server = TcpServer::new(
+    //     CONFIG
+    //         .read()
+    //         .unwrap()
+    //         .raft_server_addr
+    //         .as_ref()
+    //         .unwrap()
+    //         .parse()
+    //         .unwrap(),
+    // );
+    // register_raft_handlers(&mut raft_peer_server).await;
 
     // // let r1 = raft_peer_server.clone();
-    tokio::spawn(async move {
-        info!("starting raft peer server...");
-        raft_peer_server.run().await;
-        info!("stop raft peer server");
-    });
+    // tokio::spawn(async move {
+    //     info!("starting raft peer server...");
+    //     raft_peer_server.run().await;
+    //     info!("stop raft peer server");
+    // });
 
     let grpc_server_addr = CONFIG
         .read()
