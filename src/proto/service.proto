@@ -79,6 +79,13 @@ message ShardWriteRequest {
 }
 message ShardWriteResponse {
 }
+
+message ShardAppendLogRequest {
+}
+
+message ShardAppendLogResponse {
+}
+
 message ShardWriteReplicaRequest {
 }
 message ShardWriteReplicaResponse {
@@ -115,6 +122,7 @@ service DataService {
 
     rpc ShardRead(ShardReadRequest) returns (ShardReadResponse);
     rpc ShardWrite(ShardWriteRequest) returns (ShardWriteResponse);
+    // rpc ShardAppendLog(ShardAppendLogRequest) returns (ShardAppendLogResponse);
 
     // rpc ShardWriteReplica(ShardWriteReplicaRequest) returns (ShardWriteReplicaResponse);
     // rpc ShardInstallSnap(ShardInstallSnapRequest) returns (ShardInstallSnapResponse);

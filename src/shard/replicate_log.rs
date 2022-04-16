@@ -6,13 +6,13 @@ use prost::Message;
 
 use super::error::ShardError;
 
-pub struct ReplicatLog {
+pub struct ReplicateLog {
     ents: Vec<Entry>,
 }
 
-impl ReplicatLog {
+impl ReplicateLog {
     pub fn new() -> Self {
-        ReplicatLog { ents: Vec::new() }
+        ReplicateLog { ents: Vec::new() }
     }
 
     pub fn entries(&self, lo: u64, hi: u64, max_size: u64) -> Result<Vec<Entry>> {

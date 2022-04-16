@@ -26,6 +26,7 @@ mod heartbeat;
 mod rpc_service;
 mod shard;
 mod metadata;
+mod connections;
 
 fn setup_logger() -> Result<()> {
     let color = ColoredLevelConfig::new()

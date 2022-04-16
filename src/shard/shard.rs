@@ -3,9 +3,9 @@ use std::time;
 use std::vec::Vec;
 use std::{collections::HashMap, net::SocketAddr};
 
-use tokio::sync::RwLock;
 use anyhow::{anyhow, bail, Result};
 use log::info;
+use tokio::sync::RwLock;
 
 use crate::shard::error;
 
@@ -72,5 +72,9 @@ impl Shard {
 
     pub async fn clear(&self) {
         *self.kv_data.write().await = HashMap::new();
+    }
+
+    pub fn get_replicates(&self) -> Vec<SocketAddr> {
+        self.replicates.clone()
     }
 }

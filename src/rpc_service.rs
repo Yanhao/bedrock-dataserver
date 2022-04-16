@@ -2,9 +2,10 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 
 use anyhow::{bail, Result};
+use dataserver::replog_pb::Entry;
 use log::{info, warn};
 use tokio::sync::RwLock;
-use tonic::{Request, Response, Status};
+use tonic::{client, Request, Response, Status};
 
 use dataserver::service_pb::data_service_server::DataService;
 use dataserver::service_pb::{
@@ -12,7 +13,8 @@ use dataserver::service_pb::{
     ShardReadResponse, ShardWriteRequest, ShardWriteResponse,
 };
 
-use crate::shard::{self, SHARD_MANAGER};
+use crate::connections::CONNECTIONS;
+use crate::shard::{self, Fsm, ReplicateLog, SHARD_MANAGER};
 
 #[derive(Debug, Default)]
 pub struct RealDataServer {}
@@ -27,14 +29,14 @@ impl DataService for RealDataServer {
 
         let shard_id = req.get_ref().shard_id;
 
-        let shard = match SHARD_MANAGER.read().await.get_shard(shard_id).await {
+        let fsm = match SHARD_MANAGER.read().await.get_shard_fsm(shard_id).await {
             Err(e) => {
                 return Err(Status::not_found("no such shard"));
             }
             Ok(s) => s,
         };
 
-        let a = shard.read().await;
+        let a = fsm.read().await;
         let value = match a.get(req.get_ref().key.as_slice()).await {
             Err(_) => return Err(Status::not_found("no such key")),
             Ok(v) => v,
@@ -52,18 +54,42 @@ impl DataService for RealDataServer {
         info!("shard write");
 
         let shard_id = req.get_ref().shard_id;
-        let shard = match SHARD_MANAGER.write().await.get_shard(shard_id).await {
+        let fsm = match SHARD_MANAGER.write().await.get_shard_fsm(shard_id).await {
             Err(_) => {
                 return Err(Status::not_found("no such shard"));
             }
             Ok(s) => s,
         };
 
-        shard
-            .write()
+        fsm.write()
             .await
-            .put(req.get_ref().key.as_slice(), req.get_ref().value.as_slice())
-            .await.unwrap();
+            .apply(Entry {
+                index: 0,
+                op: "put".to_string(),
+                key: req.get_ref().value.clone(),
+                value: req.get_ref().value.clone(),
+            })
+            .await;
+
+        let replicates = fsm.read().await.shard.get_replicates();
+
+        for addr in replicates {
+            let client = CONNECTIONS
+                .write()
+                .await
+                .get_conn(addr.to_string())
+                .await
+                .unwrap();
+            client
+                .write()
+                .await
+                .shard_write(ShardWriteRequest {
+                    shard_id,
+                    key: req.get_ref().value.clone(),
+                    value: req.get_ref().value.clone(),
+                })
+                .await;
+        }
 
         let resp = ShardWriteResponse::default();
 
@@ -95,7 +121,12 @@ impl DataService for RealDataServer {
             kv_data: RwLock::new(HashMap::new()),
         };
 
-        if let Err(e) = SHARD_MANAGER.write().await.create_shard(new_shard).await {
+        if let Err(e) = SHARD_MANAGER
+            .write()
+            .await
+            .create_shard_fsm(Fsm::new(new_shard, ReplicateLog::new()))
+            .await
+        {
             warn!("failed to create shard, {:?}", e);
             return Err(Status::invalid_argument(""));
         }
@@ -109,7 +140,7 @@ impl DataService for RealDataServer {
         SHARD_MANAGER
             .write()
             .await
-            .remove_shard(req.get_ref().shard_id)
+            .remove_shard_fsm(req.get_ref().shard_id)
             .await
             .unwrap();
 
