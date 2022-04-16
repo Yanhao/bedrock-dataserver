@@ -6,6 +6,7 @@ use std::sync::Arc;
 use anyhow::{bail, Result};
 use log::{debug, error, info};
 use prost::Message;
+use tokio::select;
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
@@ -198,7 +199,7 @@ impl TcpServer {
         *self.stop_ch.lock().unwrap() = Some(tx);
 
         loop {
-            tokio::select! {
+            select! {
             _ = rx.recv() => {
                 info!("receive stop message, break from tcp server loop");
                 // FIXME: wait all server coroutine exit then break

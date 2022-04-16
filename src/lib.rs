@@ -10,3 +10,7 @@ pub mod service_pb {
     // tonic::include_proto!("service_pb");
     include!(concat!(env!("OUT_DIR"), "/service_pb.rs"));
 }
+
+pub mod metaserver_pb {
+    include!(concat!(env!("OUT_DIR"), "/messages.rs"));
+}

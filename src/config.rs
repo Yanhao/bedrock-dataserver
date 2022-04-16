@@ -5,8 +5,8 @@ use std::sync::RwLock;
 
 use anyhow::{anyhow, Result};
 use get_if_addrs::get_if_addrs;
-use lazy_static::lazy_static;
 use log::{debug, error, info};
+use once_cell::sync::Lazy;
 use serde::{self, Deserialize};
 
 use crate::error::DataServerError;
@@ -14,11 +14,9 @@ use crate::error::DataServerError;
 // the location of aproject configuration directory.
 pub const CONFIG_DIR: &str = "/etc/bedrock-dataserver";
 
-lazy_static! {
-    pub static ref CONFIG: RwLock<Configuration> = Default::default();
-    pub static ref SELF_ADDR: RwLock<SocketAddr> =
-        RwLock::new(unsafe { MaybeUninit::uninit().assume_init() });
-}
+pub static CONFIG: Lazy<RwLock<Configuration>> = Lazy::new(|| Default::default());
+pub static SELF_ADDR: Lazy<RwLock<SocketAddr>> =
+    Lazy::new(|| RwLock::new(unsafe { MaybeUninit::uninit().assume_init() }));
 
 pub fn get_self_socket_addr() -> SocketAddr {
     *SELF_ADDR.read().unwrap()

@@ -1,0 +1,187 @@
+syntax = "proto3";
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "sr.ht/moyanhao/bedrock-metaserver/messages";
+
+package messages;
+
+message Storage {
+    uint64 id = 1;
+    string name = 2;
+
+    google.protobuf.Timestamp deleted_ts = 3;
+    google.protobuf.Timestamp create_ts = 4;
+
+    string owner = 5;
+}
+
+message Shard {
+    uint64 id = 1;
+    uint64 storage_id = 2;
+    google.protobuf.Timestamp  replica_update_ts = 3;
+    repeated string replicates = 4;
+    bool is_deleted = 5;
+    google.protobuf.Timestamp deleted_ts = 6;
+    google.protobuf.Timestamp create_ts = 7;
+    string leader = 8;
+    google.protobuf.Timestamp leader_change_ts = 9;
+}
+
+message DataServer {
+    uint32 ip = 1;
+    uint32 port = 2;
+    uint64 capacity = 3;
+    uint64 free = 4;
+    google.protobuf.Timestamp last_heartbeat_ts = 5;
+    string status = 6;
+    string idc = 7;
+}
+
+message Replicate {
+    repeated string addrs = 1;
+}
+
+message HeartBeatRequest {
+    string addr = 1;
+}
+
+message HeartBeatResponse {
+}
+
+message CreateStorageRequest {
+    string name = 1;
+}
+
+message CreateStorageResponse {
+    uint64 id = 1;
+}
+
+message DeleteStorageRequest {
+    uint64 id = 1;
+    bool real_delete = 2;
+    uint64 recycle_after = 3; // in minutes
+}
+
+message DeleteStorageResponse {
+}
+
+message RenameStorageRequest {
+    uint64 id = 1;
+    string new_name = 2;
+}
+
+message RenameStorageResponse {
+}
+
+message ResizeStorageRequest {
+    uint64 id = 1;
+    uint64 new_size = 2;
+    uint64 new_shard_count = 3;
+}
+
+message ResizeStorageResponse {
+}
+
+message GetStoragesRequest {
+    repeated uint64 ids = 1;
+    repeated string names = 2;
+}
+
+message GetStoragesResponse {
+    repeated Storage storages = 1;
+
+}
+
+message ShardRange {
+    uint64 start_shard_id = 1;
+    uint64 offset = 2;
+
+}
+
+message RouteRecord {
+    uint64 shard_id = 1;
+    repeated string addrs = 2;
+}
+message ShardList {
+    repeated uint64 shard_ids = 1;
+}
+
+message GetShardRoutesRequest {
+    oneof shards {
+        ShardList shards_list = 1;
+        ShardRange shard_range = 2;
+    }
+
+    google.protobuf.Timestamp timestamp = 3;
+}
+
+message GetShardRoutesResponse {
+    repeated RouteRecord routes = 1;
+}
+
+message GetShardRoutesByStorageRequest {
+    uint64 storage_id = 1;
+    google.protobuf.Timestamp timestamp = 2;
+}
+
+message GetShardRoutesByStorageResponse {
+    repeated RouteRecord routes = 1;
+    google.protobuf.Timestamp timestamp = 2;
+    bool is_full = 3;
+}
+
+message AddDataServerRequest {
+    string addr = 1;
+}
+
+message AddDataServerResponse {
+}
+
+message RemoveDataServerRequest {
+    string addr = 1;
+}
+
+message RemoveDataServerResponse {
+}
+
+message ListDataServerRequest {
+}
+
+message ListDataServerResponse {
+    repeated DataServer data_servers = 1;
+}
+
+message UpdateDataServerRequest {
+}
+
+message UpdateDataServerResponse {
+}
+
+message ShardInfoRequest {
+    uint64 id = 1;
+}
+
+message ShardInfoResponse {
+     Shard shard = 1;
+}
+
+service MetaService {
+    rpc HeartBeat (HeartBeatRequest) returns (google.protobuf.Empty);
+
+    rpc CreateStorage (CreateStorageRequest) returns (CreateStorageResponse);
+    rpc DeleteStorage (DeleteStorageRequest) returns (DeleteStorageResponse);
+    rpc RenameStorage (RenameStorageRequest) returns (RenameStorageResponse);
+    rpc ResizeStorage (ResizeStorageRequest) returns (ResizeStorageResponse);
+    rpc GetStorages (GetStoragesRequest) returns (GetStoragesResponse);
+
+    rpc GetShardRoutes (GetShardRoutesRequest) returns (GetShardRoutesResponse);
+
+    rpc AddDataServer (AddDataServerRequest) returns (AddDataServerResponse);
+    rpc RemoveDataServer (RemoveDataServerRequest) returns (RemoveDataServerResponse);
+    rpc ListDataServer (ListDataServerRequest) returns (ListDataServerResponse);
+    rpc UpdateDataServer (UpdateDataServerRequest) returns (UpdateDataServerResponse);
+
+    rpc ShardInfo(ShardInfoRequest) returns (ShardInfoResponse);
+}

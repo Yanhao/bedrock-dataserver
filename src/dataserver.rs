@@ -20,11 +20,12 @@ use crate::rpc_service::RealDataServer;
 // mod chunk;
 mod config;
 mod error;
-mod heartbeat;
 mod format;
+mod heartbeat;
 // mod journal;
 mod rpc_service;
-// mod shard;
+mod shard;
+mod metadata;
 
 fn setup_logger() -> Result<()> {
     let color = ColoredLevelConfig::new()
@@ -175,6 +176,8 @@ async fn main() {
     //     info!("stop raft peer server");
     // });
 
+    heartbeat::HEART_BEATER.write().unwrap().start().await.unwrap();
+
     let grpc_server_addr = CONFIG
         .read()
         .unwrap()
@@ -196,6 +199,9 @@ async fn main() {
 
     signal::ctrl_c().await.unwrap();
     // r1.read().await.stop().await;
+
+    heartbeat::HEART_BEATER.write().unwrap().stop().await;
+
     info!("ctrl-c pressed");
     if let Err(e) = std::fs::remove_file(work_dir + "/LOCK") {
         error!("failed to remove lock file, err {}", e);

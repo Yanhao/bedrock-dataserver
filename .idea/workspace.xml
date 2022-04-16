@@ -8,23 +8,22 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="997e849c-65d9-4db1-aea1-781dcb19c5e4" name="Default Changelist" comment="">
-      <change afterPath="$PROJECT_DIR$/src/shard/mod.rs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/shard/shard.rs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/shard/shard_manager.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/chunk.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/chunk/chunk.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/chunk_manager.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/chunk/chunk_manager.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Cargo.lock" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.lock" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/build.rs" beforeDir="false" afterPath="$PROJECT_DIR$/build.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/config.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/config.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/dataserver.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dataserver.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/journal.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/journal/journal.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/journal_file.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/journal/journal_file.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/journal_index.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/journal/journal_index.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/heartbeat.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/heartbeat.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/lib.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lib.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/metadata.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/metadata.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/net/tcp_server.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/net/tcp_server.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/proto/service.proto" beforeDir="false" afterPath="$PROJECT_DIR$/src/proto/service.proto" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/raft_handlers.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/mraft/raft_handlers.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/raft_log.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/mraft/raft_log.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/raft_node.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/mraft/raft_node.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/raftnode_manager.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/mraft/raftnode_manager.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/tcp_server.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/net/tcp_server.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/rpc_service.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/rpc_service.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/shard/fsm.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/shard/fsm.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/shard/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/shard/mod.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/shard/shard.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/shard/shard.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/shard/shard_manager.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/shard/shard_manager.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -62,7 +61,7 @@
     "WebServerToolWindowFactoryState": "false",
     "last_opened_file_path": "/Users/bytedance/code/bedrock/bedrock-dataserver",
     "org.rust.cargo.project.model.PROJECT_DISCOVERY": "true",
-    "settings.editor.selected.configurable": "preferences.pluginManager"
+    "settings.editor.selected.configurable": "language.rust.cargo.check"
   }
 }]]></component>
   <component name="RustProjectSettings">
@@ -84,6 +83,9 @@
       <workItem from="1609126776952" duration="4290000" />
       <workItem from="1609326062579" duration="348000" />
       <workItem from="1649847826053" duration="1919000" />
+      <workItem from="1649943263932" duration="2000" />
+      <workItem from="1650028810712" duration="341000" />
+      <workItem from="1650029397457" duration="890000" />
     </task>
     <servers />
   </component>
@@ -100,5 +102,9 @@
         </entry>
       </map>
     </option>
+  </component>
+  <component name="XSLT-Support.FileAssociations.UIState">
+    <expand />
+    <select />
   </component>
 </project>

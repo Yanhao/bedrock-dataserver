@@ -1,17 +1,18 @@
 use std::net::SocketAddr;
-use std::vec::Vec;
 use std::time;
+use std::vec::Vec;
 
 use anyhow::{anyhow, bail, Result};
+use log::info;
 
 pub struct Shard {
-    shard_id: u64,
-    storage_id: u64,
-    create_ts: time::Instant,
-    replicates: Vec<SocketAddr>,
-    replicates_update_ts: time::Instant,
-    leader: SocketAddr,
-    leader_change_ts: time::Instant,
+    pub shard_id: u64,
+    pub storage_id: u64,
+    pub create_ts: time::SystemTime,
+    pub replicates: Vec<SocketAddr>,
+    pub replicates_update_ts: time::SystemTime,
+    pub leader: SocketAddr,
+    pub leader_change_ts: time::SystemTime,
 }
 
 impl Shard {
@@ -19,19 +20,23 @@ impl Shard {
         return Shard {
             shard_id,
             storage_id,
-            create_ts: time::Instant::now(),
+            create_ts: time::SystemTime::now(),
             replicates: Vec::new(),
-            replicates_update_ts: time::Instant::now(),
+            replicates_update_ts: time::SystemTime::now(),
             leader: "0.0.0.0:1024".parse().unwrap(),
-            leader_change_ts: time::Instant::now(),
+            leader_change_ts: time::SystemTime::now(),
         };
     }
 
-     pub async fn Put() -> Result<()> {
+    pub async fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
+        info!("shard put");
+
         Ok(())
     }
 
-    pub async fn Get() -> Result<()> {
-        Ok(())
+    pub async fn get(&self, key: &[u8]) -> Result<Vec<u8>> {
+        info!("shard get");
+
+        Ok(Vec::new())
     }
 }
