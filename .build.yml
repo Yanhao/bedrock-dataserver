@@ -1,7 +1,8 @@
 image: debian/sid
 packages:
-  # - rustc
-  # - cargo
+  - rustc
+  - cargo
+  - rustfmt
   - build-essential
   - curl
 sources:
@@ -10,8 +11,8 @@ tasks:
   - setup: |
       # cd bedrock-dataserver
       # CFG_RELEASE=stable CFG_RELEASE_CHANNEL=stable cargo install --path . --force --locked --features rustfmt,cargo-fmt
-      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-      source ~/.bashrc
+      # curl -y --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+      # source ~/.bashrc
   - build: |
       cd bedrock-dataserver
       cargo build
