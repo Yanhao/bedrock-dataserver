@@ -1,7 +1,9 @@
+use std::collections::HashMap;
 use std::net::SocketAddr;
 
 use anyhow::{bail, Result};
 use log::{info, warn};
+use tokio::sync::RwLock;
 use tonic::{Request, Response, Status};
 
 use dataserver::service_pb::data_service_server::DataService;
@@ -23,9 +25,24 @@ impl DataService for RealDataServer {
     ) -> Result<Response<ShardReadResponse>, Status> {
         info!("shard read");
 
-        let reply = ShardReadResponse::default();
+        let shard_id = req.get_ref().shard_id;
 
-        Ok(Response::new(reply))
+        let shard = match SHARD_MANAGER.read().await.get_shard(shard_id).await {
+            Err(e) => {
+                return Err(Status::not_found("no such shard"));
+            }
+            Ok(s) => s,
+        };
+
+        let a = shard.read().await;
+        let value = match a.get(req.get_ref().key.as_slice()).await {
+            Err(_) => return Err(Status::not_found("no such key")),
+            Ok(v) => v,
+        };
+
+        let resp = ShardReadResponse { value };
+
+        Ok(Response::new(resp))
     }
 
     async fn shard_write(
@@ -34,9 +51,23 @@ impl DataService for RealDataServer {
     ) -> Result<Response<ShardWriteResponse>, Status> {
         info!("shard write");
 
-        let reply = ShardWriteResponse::default();
+        let shard_id = req.get_ref().shard_id;
+        let shard = match SHARD_MANAGER.write().await.get_shard(shard_id).await {
+            Err(_) => {
+                return Err(Status::not_found("no such shard"));
+            }
+            Ok(s) => s,
+        };
 
-        Ok(Response::new(reply))
+        shard
+            .write()
+            .await
+            .put(req.get_ref().key.as_slice(), req.get_ref().value.as_slice())
+            .await.unwrap();
+
+        let resp = ShardWriteResponse::default();
+
+        Ok(Response::new(resp))
     }
 
     async fn create_shard(
@@ -60,9 +91,11 @@ impl DataService for RealDataServer {
             leader_change_ts: req.get_ref().leader_change_ts.to_owned().unwrap().into(),
             replicates_update_ts: req.get_ref().replica_update_ts.to_owned().unwrap().into(),
             replicates,
+
+            kv_data: RwLock::new(HashMap::new()),
         };
 
-        if let Err(e) = SHARD_MANAGER.write().unwrap().create_shard(new_shard) {
+        if let Err(e) = SHARD_MANAGER.write().await.create_shard(new_shard).await {
             warn!("failed to create shard, {:?}", e);
             return Err(Status::invalid_argument(""));
         }
@@ -75,8 +108,9 @@ impl DataService for RealDataServer {
 
         SHARD_MANAGER
             .write()
-            .unwrap()
+            .await
             .remove_shard(req.get_ref().shard_id)
+            .await
             .unwrap();
 
         Ok(Response::new(()))

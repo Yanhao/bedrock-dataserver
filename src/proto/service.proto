@@ -65,14 +65,17 @@ message UnlockShardRequest {
 message UnlockShardResponse {
 }
 message ShardReadRequest {
-    bytes key = 1;
+    uint64 shard_id = 1;
+    bytes key = 2;
 }
 message ShardReadResponse {
     bytes value = 1;
 }
 message ShardWriteRequest {
-    bytes key = 1;
-    bytes value = 2;
+    uint64 shard_id = 1;
+
+    bytes key = 2;
+    bytes value = 3;
 }
 message ShardWriteResponse {
 }

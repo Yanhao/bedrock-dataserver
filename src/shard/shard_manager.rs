@@ -1,8 +1,9 @@
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use anyhow::{bail, Result};
 use once_cell::sync::Lazy;
+use tokio::sync::RwLock;
 
 use super::error::ShardError;
 use super::shard::Shard;
@@ -23,8 +24,8 @@ impl ShardManager {
         };
     }
 
-    pub fn get_shard(&self, id: u64) -> Result<Arc<RwLock<Shard>>> {
-        match self.shards.read().unwrap().get(&id) {
+    pub async fn get_shard(&self, id: u64) -> Result<Arc<RwLock<Shard>>> {
+        match self.shards.read().await.get(&id) {
             None => bail!(ShardError::NoSuchShard),
             Some(shard) => {
                 return Ok(shard.to_owned());
@@ -32,20 +33,20 @@ impl ShardManager {
         }
     }
 
-    pub fn remove_shard(&mut self, id: u64) -> Result<()> {
-        self.shards.write().unwrap().remove(&id);
+    pub async fn remove_shard(&mut self, id: u64) -> Result<()> {
+        self.shards.write().await.remove(&id);
 
         Ok(())
     }
 
-    pub fn create_shard(&mut self, shard: Shard) -> Result<()> {
-        if self.shards.read().unwrap().contains_key(&(shard.shard_id)) {
+    pub async fn create_shard(&mut self, shard: Shard) -> Result<()> {
+        if self.shards.read().await.contains_key(&(shard.shard_id)) {
             bail!(ShardError::ShardExists);
         }
 
         self.shards
             .write()
-            .unwrap()
+            .await
             .insert(shard.shard_id, Arc::new(RwLock::new(shard)));
 
         Ok(())
