@@ -18,4 +18,7 @@ pub enum ShardError {
     EmptyRepLog,
     #[error("compact failed")]
     FailedToCompact,
+
+    #[error("order keeper timeout")]
+    TimeOut,
 }

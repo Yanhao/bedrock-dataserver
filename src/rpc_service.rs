@@ -2,19 +2,21 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 
 use anyhow::{bail, Result};
-use dataserver::replog_pb::Entry;
+use dataserver::replog_pb::{self, Entry};
+use dataserver::service_pb::shard_append_log_request;
 use log::{info, warn};
 use tokio::sync::RwLock;
 use tonic::{client, Request, Response, Status};
 
 use dataserver::service_pb::data_service_server::DataService;
 use dataserver::service_pb::{
-    CreateShardRequest, CreateShardResponse, DeleteShardRequest, ShardReadRequest,
-    ShardReadResponse, ShardWriteRequest, ShardWriteResponse,
+    CreateShardRequest, CreateShardResponse, DeleteShardRequest, ShardAppendLogRequest,
+    ShardAppendLogResponse, ShardReadRequest, ShardReadResponse, ShardWriteRequest,
+    ShardWriteResponse,
 };
 
 use crate::connections::CONNECTIONS;
-use crate::shard::{self, Fsm, ReplicateLog, SHARD_MANAGER};
+use crate::shard::{self, Fsm, ReplicateLog, Shard, SHARD_MANAGER};
 
 #[derive(Debug, Default)]
 pub struct RealDataServer {}
@@ -61,7 +63,8 @@ impl DataService for RealDataServer {
             Ok(s) => s,
         };
 
-        fsm.write()
+        let entry = fsm
+            .write()
             .await
             .apply(Entry {
                 index: 0,
@@ -69,7 +72,8 @@ impl DataService for RealDataServer {
                 key: req.get_ref().value.clone(),
                 value: req.get_ref().value.clone(),
             })
-            .await;
+            .await
+            .unwrap();
 
         let replicates = fsm.read().await.shard.get_replicates();
 
@@ -83,10 +87,14 @@ impl DataService for RealDataServer {
             client
                 .write()
                 .await
-                .shard_write(ShardWriteRequest {
+                .shard_append_log(ShardAppendLogRequest {
                     shard_id,
-                    key: req.get_ref().value.clone(),
-                    value: req.get_ref().value.clone(),
+                    entries: vec![shard_append_log_request::Entry {
+                        index: entry.index,
+                        op: "put".to_string(),
+                        key: entry.key.clone(),
+                        value: entry.value.clone(),
+                    }],
                 })
                 .await;
         }
@@ -145,5 +153,36 @@ impl DataService for RealDataServer {
             .unwrap();
 
         Ok(Response::new(()))
+    }
+
+    async fn shard_append_log(
+        &self,
+        req: Request<ShardAppendLogRequest>,
+    ) -> Result<Response<ShardAppendLogResponse>, Status> {
+        info!("shard append log entries");
+
+        let fsm = SHARD_MANAGER
+            .read()
+            .await
+            .get_shard_fsm(req.get_ref().shard_id)
+            .await
+            .unwrap();
+
+        for e in req.get_ref().entries.iter() {
+            fsm.write().await.apply(replog_pb::Entry {
+                op: e.op.clone(),
+                index: e.index,
+                key: e.key.clone(),
+                value: e.value.clone(),
+            });
+        }
+
+        let last_index = fsm.read().await.last_index();
+
+        let resp = Response::new(ShardAppendLogResponse {
+            last_applied_index: last_index,
+        });
+
+        Ok(resp)
     }
 }
