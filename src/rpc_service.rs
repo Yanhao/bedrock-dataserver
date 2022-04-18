@@ -1,12 +1,16 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use anyhow::{bail, Result};
 use dataserver::replog_pb::{self, Entry};
-use dataserver::service_pb::shard_append_log_request;
+use dataserver::service_pb::{
+    shard_append_log_request, ShardInstallSnapshotRequest, ShardInstallSnapshotResponse,
+};
+use futures::StreamExt;
 use log::{info, warn};
 use tokio::sync::RwLock;
-use tonic::{client, Request, Response, Status};
+use tonic::{client, Request, Response, Status, Streaming};
 
 use dataserver::service_pb::data_service_server::DataService;
 use dataserver::service_pb::{
@@ -16,6 +20,7 @@ use dataserver::service_pb::{
 };
 
 use crate::connections::CONNECTIONS;
+use crate::shard::SnapShoter;
 use crate::shard::{self, Fsm, ReplicateLog, Shard, SHARD_MANAGER};
 
 #[derive(Debug, Default)]
@@ -90,10 +95,10 @@ impl DataService for RealDataServer {
                 .shard_append_log(ShardAppendLogRequest {
                     shard_id,
                     entries: vec![shard_append_log_request::Entry {
-                        index: entry.index,
-                        op: "put".to_string(),
-                        key: entry.key.clone(),
-                        value: entry.value.clone(),
+                        index: entry.entry.index,
+                        op: "put".into(),
+                        key: entry.entry.key.clone(),
+                        value: entry.entry.value.clone(),
                     }],
                 })
                 .await;
@@ -132,7 +137,10 @@ impl DataService for RealDataServer {
         if let Err(e) = SHARD_MANAGER
             .write()
             .await
-            .create_shard_fsm(Fsm::new(new_shard, ReplicateLog::new()))
+            .create_shard_fsm(Fsm::new(
+                new_shard,
+                Arc::new(RwLock::new(ReplicateLog::new())),
+            ))
             .await
         {
             warn!("failed to create shard, {:?}", e);
@@ -177,12 +185,46 @@ impl DataService for RealDataServer {
             });
         }
 
-        let last_index = fsm.read().await.last_index();
+        let last_index = fsm.read().await.last_index().await;
 
         let resp = Response::new(ShardAppendLogResponse {
             last_applied_index: last_index,
         });
 
+        Ok(resp)
+    }
+
+    async fn shard_install_snapshot(
+        &self,
+        req: Request<Streaming<ShardInstallSnapshotRequest>>,
+    ) -> Result<Response<ShardInstallSnapshotResponse>, Status> {
+        let mut in_stream = req.into_inner();
+        while let Some(result) = in_stream.next().await {
+            if let Err(_) = result {
+                break;
+            }
+            let piece = result.unwrap();
+            let shard_id = piece.shard_id;
+
+            let fsm = SHARD_MANAGER
+                .read()
+                .await
+                .get_shard_fsm(shard_id)
+                .await
+                .unwrap();
+
+            fsm.as_ref().write().await.shard.clear().await;
+
+            fsm.as_ref()
+                .write()
+                .await
+                .shard
+                .install_snapshot(&piece.data_piece)
+                .await
+                .unwrap();
+        }
+
+        let resp = Response::new(ShardInstallSnapshotResponse {});
         Ok(resp)
     }
 }

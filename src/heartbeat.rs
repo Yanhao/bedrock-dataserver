@@ -49,7 +49,7 @@ impl HeartBeater {
             info!("heartbeat stopped ...");
         });
 
-        todo!()
+        Ok(())
     }
 
     pub async fn stop(&mut self) {

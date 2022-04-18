@@ -5,9 +5,13 @@ use std::{collections::HashMap, net::SocketAddr};
 
 use anyhow::{anyhow, bail, Result};
 use log::info;
+use serde::de::value;
 use tokio::sync::RwLock;
+use tonic::async_trait;
 
 use crate::shard::error;
+
+use super::snapshoter::SnapShoter;
 
 pub struct Shard {
     pub shard_id: u64,
@@ -76,5 +80,42 @@ impl Shard {
 
     pub fn get_replicates(&self) -> Vec<SocketAddr> {
         self.replicates.clone()
+    }
+}
+
+#[async_trait]
+impl SnapShoter for Shard {
+    async fn create_snapshot(&self) -> Result<Vec<Vec<u8>>> {
+        let mut ret: Vec<Vec<u8>> = Default::default();
+
+        for kv in self.kv_data.read().await.iter() {
+            let mut key = kv.0.to_owned();
+            let mut value = kv.1.to_owned();
+
+
+            let mut item = vec![];
+            item.append(&mut key);
+            item.append(&mut vec!['\n' as u8]);
+            item.append(&mut value);
+
+            ret.push( item);
+        }
+
+        Ok(ret)
+    }
+
+    async fn install_snapshot(&mut self, piece: &[u8]) -> Result<()> {
+        let piece = piece.to_owned();
+        let mut ps  = piece.split(|b| {
+            *b  == '\n' as u8
+        });
+
+        let key = ps.next().unwrap().to_owned();
+        let value = ps.next().unwrap().to_owned();
+        assert!(ps.next().is_none());
+
+        self.kv_data.write().await.insert(key, value);
+
+        Ok(())
     }
 }

@@ -29,6 +29,8 @@ protobuf = "2"
 regex = "1"
 libc = "0.2"
 once_cell = "1.10.0"
+futures = "0.3"
+
 
 [build-dependencies]
 prost-build = "0.7"

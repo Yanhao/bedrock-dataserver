@@ -98,13 +98,18 @@ message ShardAppendLogResponse {
     uint64 last_applied_index = 1;
 }
 
+
+message ShardInstallSnapshotRequest {
+    uint64 shard_id = 1;
+    bytes data_piece = 2;
+}
+
+message ShardInstallSnapshotResponse {
+}
+
 message ShardWriteReplicaRequest {
 }
 message ShardWriteReplicaResponse {
-}
-message ShardInstallSnapRequest {
-}
-message ShardInstallSnapResponse {
 }
 message ShardRepairRequest {
 }
@@ -135,6 +140,7 @@ service DataService {
     rpc ShardRead(ShardReadRequest) returns (ShardReadResponse);
     rpc ShardWrite(ShardWriteRequest) returns (ShardWriteResponse);
     rpc ShardAppendLog(ShardAppendLogRequest) returns (ShardAppendLogResponse);
+    rpc ShardInstallSnapshot(stream ShardInstallSnapshotRequest) returns (ShardInstallSnapshotResponse);
 
     // rpc ShardWriteReplica(ShardWriteReplicaRequest) returns (ShardWriteReplicaResponse);
     // rpc ShardInstallSnap(ShardInstallSnapRequest) returns (ShardInstallSnapResponse);
