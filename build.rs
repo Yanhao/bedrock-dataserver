@@ -9,9 +9,9 @@ fn main() {
     )
     .unwrap();
 
-    tonic_build::compile_protos("src/proto/service.proto").unwrap();
+    tonic_build::compile_protos("src/proto/dataserver.proto").unwrap();
 
-    tonic_build::compile_protos("src/proto/messages.proto").unwrap();
+    tonic_build::compile_protos("src/proto/metaserver.proto").unwrap();
 
     // tonic_build::compile_protos("src/proto/replog.proto").unwrap();
 }
