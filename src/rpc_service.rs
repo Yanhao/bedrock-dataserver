@@ -6,6 +6,7 @@ use anyhow::{bail, Result};
 use dataserver::replog_pb::{self, Entry};
 use dataserver::service_pb::{
     shard_append_log_request, ShardInstallSnapshotRequest, ShardInstallSnapshotResponse,
+    TransferShardLeaderRequest, TransferShardLeaderResponse,
 };
 use futures::StreamExt;
 use log::{info, warn};
@@ -225,6 +226,32 @@ impl DataService for RealDataServer {
         }
 
         let resp = Response::new(ShardInstallSnapshotResponse {});
+        Ok(resp)
+    }
+
+    async fn transfer_shard_leader(
+        &self,
+        req: Request<TransferShardLeaderRequest>,
+    ) -> Result<Response<TransferShardLeaderResponse>, Status> {
+        info!("transfer shard leader");
+
+        let shard_id = req.get_ref().shard_id;
+        let fsm = match SHARD_MANAGER.read().await.get_shard_fsm(shard_id).await {
+            Err(e) => {
+                return Err(Status::not_found("no such shard"));
+            }
+            Ok(s) => s,
+        };
+
+        let mut socks = Vec::<SocketAddr>::new();
+        for rep in req.get_ref().replicates.iter() {
+            let addr: SocketAddr = rep.parse().unwrap();
+            socks.push(addr);
+        }
+
+        fsm.write().await.shard.set_replicates(&socks).unwrap();
+
+        let resp = Response::new(TransferShardLeaderResponse {});
         Ok(resp)
     }
 }

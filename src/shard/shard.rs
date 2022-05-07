@@ -81,6 +81,11 @@ impl Shard {
     pub fn get_replicates(&self) -> Vec<SocketAddr> {
         self.replicates.clone()
     }
+
+    pub fn set_replicates(&mut self, replicats: &[SocketAddr]) -> Result<()> {
+        self.replicates = replicats.to_owned();
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -92,13 +97,12 @@ impl SnapShoter for Shard {
             let mut key = kv.0.to_owned();
             let mut value = kv.1.to_owned();
 
-
             let mut item = vec![];
             item.append(&mut key);
             item.append(&mut vec!['\n' as u8]);
             item.append(&mut value);
 
-            ret.push( item);
+            ret.push(item);
         }
 
         Ok(ret)
@@ -106,9 +110,7 @@ impl SnapShoter for Shard {
 
     async fn install_snapshot(&mut self, piece: &[u8]) -> Result<()> {
         let piece = piece.to_owned();
-        let mut ps  = piece.split(|b| {
-            *b  == '\n' as u8
-        });
+        let mut ps = piece.split(|b| *b == '\n' as u8);
 
         let key = ps.next().unwrap().to_owned();
         let value = ps.next().unwrap().to_owned();
