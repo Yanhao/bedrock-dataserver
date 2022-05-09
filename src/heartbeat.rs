@@ -33,6 +33,7 @@ impl HeartBeater {
                         let meta = METADATA.read().unwrap().get_meta();
                         let addr = meta.metaserver_leader;
 
+                        info!("heartbeat to metaserver ... metaserver addr: {}", addr);
                         let mut client = meta_service_client::MetaServiceClient::connect(addr).await.unwrap();
 
                         let req = tonic::Request::new(HeartBeatRequest{
@@ -59,6 +60,7 @@ impl HeartBeater {
             .as_ref()
             .unwrap()
             .send(())
-            .await;
+            .await
+            .unwrap();
     }
 }

@@ -19,7 +19,7 @@ pub struct Shard {
     pub create_ts: time::SystemTime,
     pub replicates: Vec<SocketAddr>,
     pub replicates_update_ts: time::SystemTime,
-    pub leader: SocketAddr,
+    pub leader: Option<SocketAddr>,
     pub leader_change_ts: time::SystemTime,
 
     pub kv_data: RwLock<HashMap<Vec<u8>, Vec<u8>>>,
@@ -33,7 +33,7 @@ impl Shard {
             create_ts: time::SystemTime::now(),
             replicates: Vec::new(),
             replicates_update_ts: time::SystemTime::now(),
-            leader: "0.0.0.0:1024".parse().unwrap(),
+            leader: Some("0.0.0.0:1024".parse().unwrap()),
             leader_change_ts: time::SystemTime::now(),
 
             kv_data: RwLock::new(HashMap::new()),

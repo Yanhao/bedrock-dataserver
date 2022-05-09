@@ -21,6 +21,7 @@ use dataserver::service_pb::{
 };
 
 use crate::connections::CONNECTIONS;
+use crate::param_check;
 use crate::shard::SnapShoter;
 use crate::shard::{self, Fsm, ReplicateLog, Shard, SHARD_MANAGER};
 
@@ -33,6 +34,10 @@ impl DataService for RealDataServer {
         &self,
         req: Request<ShardReadRequest>,
     ) -> Result<Response<ShardReadResponse>, Status> {
+        if !param_check::shard_read_param_check(req.get_ref()) {
+            return Err(Status::invalid_argument(""));
+        }
+
         info!("shard read");
 
         let shard_id = req.get_ref().shard_id;
@@ -59,6 +64,10 @@ impl DataService for RealDataServer {
         &self,
         req: Request<ShardWriteRequest>,
     ) -> Result<Response<ShardWriteResponse>, Status> {
+        if !param_check::shard_write_param_check(req.get_ref()) {
+            return Err(Status::invalid_argument(""));
+        }
+
         info!("shard write");
 
         let shard_id = req.get_ref().shard_id;
@@ -114,6 +123,10 @@ impl DataService for RealDataServer {
         &self,
         req: Request<CreateShardRequest>,
     ) -> Result<Response<CreateShardResponse>, Status> {
+        if !param_check::create_shard_param_check(req.get_ref()) {
+            return Err(Status::invalid_argument(""));
+        }
+
         info!("create shard, req: {:?}", req);
 
         let resp = CreateShardResponse::default();
@@ -127,7 +140,11 @@ impl DataService for RealDataServer {
             shard_id: req.get_ref().shard_id,
             storage_id: req.get_ref().storage_id,
             create_ts: req.get_ref().create_ts.to_owned().unwrap().into(),
-            leader: req.get_ref().leader.parse().unwrap(),
+            leader: if req.get_ref().leader == "" {
+                None
+            } else {
+                Some(req.get_ref().leader.parse().unwrap())
+            },
             leader_change_ts: req.get_ref().leader_change_ts.to_owned().unwrap().into(),
             replicates_update_ts: req.get_ref().replica_update_ts.to_owned().unwrap().into(),
             replicates,
@@ -148,10 +165,15 @@ impl DataService for RealDataServer {
             return Err(Status::invalid_argument(""));
         }
 
+        info!("create shard successfully, req: {:?}", req);
         Ok(Response::new(resp))
     }
 
     async fn delete_shard(&self, req: Request<DeleteShardRequest>) -> Result<Response<()>, Status> {
+        if !param_check::delete_shard_param_check(req.get_ref()) {
+            return Err(Status::invalid_argument(""));
+        }
+
         info!("delete shard, req: {:?}", req);
 
         SHARD_MANAGER
@@ -168,6 +190,10 @@ impl DataService for RealDataServer {
         &self,
         req: Request<ShardAppendLogRequest>,
     ) -> Result<Response<ShardAppendLogResponse>, Status> {
+        if !param_check::shard_append_log_param_check(req.get_ref()) {
+            return Err(Status::invalid_argument(""));
+        }
+
         info!("shard append log entries");
 
         let fsm = SHARD_MANAGER
@@ -199,12 +225,19 @@ impl DataService for RealDataServer {
         &self,
         req: Request<Streaming<ShardInstallSnapshotRequest>>,
     ) -> Result<Response<ShardInstallSnapshotResponse>, Status> {
+        info!("shard install snapshot");
+
         let mut in_stream = req.into_inner();
         while let Some(result) = in_stream.next().await {
             if let Err(_) = result {
                 break;
             }
             let piece = result.unwrap();
+
+            if !param_check::shard_install_snapshot_param_check(&piece) {
+                return Err(Status::invalid_argument(""));
+            }
+
             let shard_id = piece.shard_id;
 
             let fsm = SHARD_MANAGER
@@ -233,6 +266,10 @@ impl DataService for RealDataServer {
         &self,
         req: Request<TransferShardLeaderRequest>,
     ) -> Result<Response<TransferShardLeaderResponse>, Status> {
+        if !param_check::transfer_shard_leader_param_check(req.get_ref()) {
+            return Err(Status::invalid_argument(""));
+        }
+
         info!("transfer shard leader");
 
         let shard_id = req.get_ref().shard_id;

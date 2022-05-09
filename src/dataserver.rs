@@ -27,6 +27,7 @@ mod rpc_service;
 mod shard;
 mod metadata;
 mod connections;
+mod param_check;
 
 fn setup_logger() -> Result<()> {
     let color = ColoredLevelConfig::new()
@@ -44,7 +45,7 @@ fn setup_logger() -> Result<()> {
                 message
             ))
         })
-        .level(log::LevelFilter::Debug)
+        .level(log::LevelFilter::Info)
         .chain(std::io::stdout())
         // .chain(fern::log_file("dataserver.log"))
         .apply()?;
