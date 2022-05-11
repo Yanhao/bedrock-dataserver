@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use dataserver::replog_pb::{self, Entry};
 use dataserver::service_pb::{
     shard_append_log_request, ShardInstallSnapshotRequest, ShardInstallSnapshotResponse,
@@ -11,7 +11,7 @@ use dataserver::service_pb::{
 use futures::StreamExt;
 use log::{info, warn};
 use tokio::sync::RwLock;
-use tonic::{client, Request, Response, Status, Streaming};
+use tonic::{Request, Response, Status, Streaming};
 
 use dataserver::service_pb::data_service_server::DataService;
 use dataserver::service_pb::{
@@ -23,7 +23,7 @@ use dataserver::service_pb::{
 use crate::connections::CONNECTIONS;
 use crate::param_check;
 use crate::shard::SnapShoter;
-use crate::shard::{self, Fsm, ReplicateLog, Shard, SHARD_MANAGER};
+use crate::shard::{self, Fsm, ReplicateLog, SHARD_MANAGER};
 
 #[derive(Debug, Default)]
 pub struct RealDataServer {}
@@ -38,12 +38,12 @@ impl DataService for RealDataServer {
             return Err(Status::invalid_argument(""));
         }
 
-        info!("shard read");
+        info!("shard read, req: {:?}", req);
 
         let shard_id = req.get_ref().shard_id;
 
         let fsm = match SHARD_MANAGER.read().await.get_shard_fsm(shard_id).await {
-            Err(e) => {
+            Err(_) => {
                 return Err(Status::not_found("no such shard"));
             }
             Ok(s) => s,
@@ -68,7 +68,7 @@ impl DataService for RealDataServer {
             return Err(Status::invalid_argument(""));
         }
 
-        info!("shard write");
+        info!("shard write, req: {:?}", req);
 
         let shard_id = req.get_ref().shard_id;
         let fsm = match SHARD_MANAGER.write().await.get_shard_fsm(shard_id).await {
@@ -83,7 +83,7 @@ impl DataService for RealDataServer {
             .await
             .apply(Entry {
                 index: 0,
-                op: "put".to_string(),
+                op: "put".into(),
                 key: req.get_ref().value.clone(),
                 value: req.get_ref().value.clone(),
             })
@@ -99,6 +99,7 @@ impl DataService for RealDataServer {
                 .get_conn(addr.to_string())
                 .await
                 .unwrap();
+
             client
                 .write()
                 .await
@@ -111,12 +112,11 @@ impl DataService for RealDataServer {
                         value: entry.entry.value.clone(),
                     }],
                 })
-                .await;
+                .await
+                .unwrap();
         }
 
-        let resp = ShardWriteResponse::default();
-
-        Ok(Response::new(resp))
+        Ok(Response::new(ShardWriteResponse::default()))
     }
 
     async fn create_shard(
@@ -136,8 +136,9 @@ impl DataService for RealDataServer {
             replicates.push(rep.parse().unwrap());
         }
 
+        let shard_id = req.get_ref().shard_id;
         let new_shard = shard::Shard {
-            shard_id: req.get_ref().shard_id,
+            shard_id,
             storage_id: req.get_ref().storage_id,
             create_ts: req.get_ref().create_ts.to_owned().unwrap().into(),
             leader: if req.get_ref().leader == "" {
@@ -165,6 +166,15 @@ impl DataService for RealDataServer {
             return Err(Status::invalid_argument(""));
         }
 
+        let fsm = SHARD_MANAGER
+            .write()
+            .await
+            .get_shard_fsm(shard_id)
+            .await
+            .unwrap();
+
+        fsm.write().await.start().await.unwrap();
+
         info!("create shard successfully, req: {:?}", req);
         Ok(Response::new(resp))
     }
@@ -176,10 +186,21 @@ impl DataService for RealDataServer {
 
         info!("delete shard, req: {:?}", req);
 
+        let shard_id = req.get_ref().shard_id;
+
+        let fsm = SHARD_MANAGER
+            .write()
+            .await
+            .get_shard_fsm(shard_id)
+            .await
+            .unwrap();
+
+        fsm.write().await.stop().await;
+
         SHARD_MANAGER
             .write()
             .await
-            .remove_shard_fsm(req.get_ref().shard_id)
+            .remove_shard_fsm(shard_id)
             .await
             .unwrap();
 
@@ -194,7 +215,7 @@ impl DataService for RealDataServer {
             return Err(Status::invalid_argument(""));
         }
 
-        info!("shard append log entries");
+        info!("shard append log entries, req: {:?}", req);
 
         let fsm = SHARD_MANAGER
             .read()
@@ -204,12 +225,17 @@ impl DataService for RealDataServer {
             .unwrap();
 
         for e in req.get_ref().entries.iter() {
-            fsm.write().await.apply(replog_pb::Entry {
-                op: e.op.clone(),
-                index: e.index,
-                key: e.key.clone(),
-                value: e.value.clone(),
-            });
+            // FIXME: should use version in Entry
+            fsm.write()
+                .await
+                .apply(replog_pb::Entry {
+                    op: e.op.clone(),
+                    index: e.index,
+                    key: e.key.clone(),
+                    value: e.value.clone(),
+                })
+                .await
+                .unwrap();
         }
 
         let last_index = fsm.read().await.last_index().await;
@@ -270,11 +296,11 @@ impl DataService for RealDataServer {
             return Err(Status::invalid_argument(""));
         }
 
-        info!("transfer shard leader");
+        info!("transfer shard leader, req: {:?}", req);
 
         let shard_id = req.get_ref().shard_id;
         let fsm = match SHARD_MANAGER.read().await.get_shard_fsm(shard_id).await {
-            Err(e) => {
+            Err(_) => {
                 return Err(Status::not_found("no such shard"));
             }
             Ok(s) => s,
@@ -288,7 +314,6 @@ impl DataService for RealDataServer {
 
         fsm.write().await.shard.set_replicates(&socks).unwrap();
 
-        let resp = Response::new(TransferShardLeaderResponse {});
-        Ok(resp)
+        Ok(Response::new(TransferShardLeaderResponse {}))
     }
 }

@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{bail, Result};
 // use rocksdb::{Options, DB};
 
 // use crate::meta::MetaData;

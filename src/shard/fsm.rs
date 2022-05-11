@@ -1,15 +1,13 @@
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use log::warn;
 use tokio::sync::{mpsc, Mutex, RwLock};
-use tonic::{Request, Response};
+use tonic::Request;
 
 use dataserver::replog_pb::Entry;
-use dataserver::service_pb::{
-    shard_append_log_request, ShardAppendLogRequest, ShardAppendLogResponse,
-};
+use dataserver::service_pb::{shard_append_log_request, ShardAppendLogRequest};
 
 use crate::connections::CONNECTIONS;
 
@@ -127,7 +125,7 @@ impl Fsm {
                                 warn!("failed to append_log, err: {}", e)
                             }
                         }
-                        en.sender.send(()).await;
+                        en.sender.send(()).await.unwrap();
                     }
                 }
             }
@@ -175,7 +173,7 @@ impl Fsm {
 
         self.order_keeper.pass_order(entry.index).await;
 
-        if entry.op == "get" {
+        if entry.op == "put" {
             self.shard
                 .put(entry.key.as_slice(), entry.value.as_slice())
                 .await

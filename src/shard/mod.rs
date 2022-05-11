@@ -1,10 +1,10 @@
 mod error;
 mod fsm;
+mod kv_store;
 mod order_keeper;
 mod replicate_log;
 mod shard;
 mod shard_manager;
-mod kv_store;
 mod snapshoter;
 
 pub use error::ShardError;

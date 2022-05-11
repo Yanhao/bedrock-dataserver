@@ -1,16 +1,14 @@
 use std::env::set_current_dir;
 use std::path::Path;
-use std::sync::Arc;
 
 use anyhow::Result;
 use chrono;
 use clap::{App, Arg};
-use dataserver::service_pb::data_service_server::{DataService, DataServiceServer};
+use dataserver::service_pb::data_service_server::DataServiceServer;
 use fern;
 use fern::colors::{Color, ColoredLevelConfig};
 use log::{debug, error, info};
 use tokio::signal;
-use tokio::sync::RwLock;
 use tonic::transport::Server as GrpcServer;
 
 use crate::config::{config_mod_init, CONFIG, CONFIG_DIR};
@@ -23,11 +21,11 @@ mod error;
 mod format;
 mod heartbeat;
 // mod journal;
+mod connections;
+mod metadata;
+mod param_check;
 mod rpc_service;
 mod shard;
-mod metadata;
-mod connections;
-mod param_check;
 
 fn setup_logger() -> Result<()> {
     let color = ColoredLevelConfig::new()
@@ -178,7 +176,12 @@ async fn main() {
     //     info!("stop raft peer server");
     // });
 
-    heartbeat::HEART_BEATER.write().unwrap().start().await.unwrap();
+    heartbeat::HEART_BEATER
+        .write()
+        .unwrap()
+        .start()
+        .await
+        .unwrap();
 
     let grpc_server_addr = CONFIG
         .read()

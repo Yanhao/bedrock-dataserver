@@ -46,7 +46,7 @@ impl Notifier {
     pub fn get_error(&self) -> Result<(), ShardError> {
         match self.err {
             Err(ShardError::TimeOut) => Err(ShardError::TimeOut),
-            _ => Ok(())
+            _ => Ok(()),
         }
     }
 
