@@ -1,7 +1,7 @@
 use std::sync::{Mutex, RwLock};
 
 use anyhow::Result;
-use log::info;
+use log::{info, warn};
 use once_cell::sync::Lazy;
 use tokio::{select, sync::mpsc};
 
@@ -34,15 +34,20 @@ impl HeartBeater {
                         let addr = meta.metaserver_leader;
 
                         info!("heartbeat to metaserver ... metaserver addr: {}", addr);
-                        let mut client = meta_service_client::MetaServiceClient::connect(addr).await.unwrap();
+                        let mut client = meta_service_client::MetaServiceClient::connect(addr.clone()).await.unwrap();
 
                         let req = tonic::Request::new(HeartBeatRequest{
                             addr: get_self_socket_addr().to_string(),
                         });
 
-                        let resp = client.heart_beat(req).await.unwrap();
-
-                        info!("heartbeat response: {:?}", resp)
+                        match client.heart_beat(req).await {
+                            Err(e) => {
+                                warn!("failed to heart beat to {}, err: {:?}", addr, e);
+                            },
+                            Ok(resp) => {
+                                info!("heartbeat response: {:?}", resp);
+                            }
+                        }
                     }
                 }
             }

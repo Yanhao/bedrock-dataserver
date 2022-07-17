@@ -178,6 +178,8 @@ impl Fsm {
         let (tx, rx) = mpsc::channel(3);
 
         self.order_keeper.ensure_order(entry.index).await.unwrap();
+
+        // TODO: use group commit to improve performance
         self.rep_log
             .write()
             .await
