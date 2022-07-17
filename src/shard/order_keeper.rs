@@ -94,7 +94,13 @@ impl OrderKeeper {
     }
 
     pub async fn ensure_order(&mut self, order: OrderType) -> Result<(), ShardError> {
-        if self.netxt_order == order {}
+        if self.netxt_order < order {
+            return Err(ShardError::IgnoreOrder);
+        }
+
+        if self.netxt_order == order {
+            return Ok(());
+        }
 
         let notifier = Arc::new(Mutex::new(Notifier::new()));
         self.queue.push(Oitem {
@@ -106,7 +112,8 @@ impl OrderKeeper {
             .lock()
             .await
             .wait(tokio::time::Duration::from_secs(1))
-            .await;
+            .await
+            .unwrap();
 
         return notifier.lock().await.get_error();
     }
@@ -139,4 +146,12 @@ impl OrderKeeper {
     pub fn get_next_order(&self) -> OrderType {
         self.netxt_order
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    pub fn test_order_keeper() {}
 }

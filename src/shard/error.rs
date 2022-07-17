@@ -21,4 +21,6 @@ pub enum ShardError {
 
     #[error("order keeper timeout")]
     TimeOut,
+    #[error("ignore this order")]
+    IgnoreOrder,
 }

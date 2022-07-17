@@ -36,6 +36,9 @@ impl ReplicateLog {
     }
 
     pub fn last_index(&self) -> u64 {
+        if self.ents.is_empty() {
+            return 0;
+        }
         self.ents[0].index + self.ents.len() as u64 - 1
     }
 

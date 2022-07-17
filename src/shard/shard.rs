@@ -43,9 +43,11 @@ impl Shard {
         let value = value.to_vec();
 
         info!(
-            "shard put: key={}, value={}",
-            from_utf8(&key).unwrap(),
-            from_utf8(&value).unwrap()
+            "shard put: key={:?}, value={:?}",
+            key,
+            value,
+            // from_utf8(&key).unwrap(),
+            // from_utf8(&value).unwrap()
         );
 
         self.kv_data.write().await.insert(key, value);

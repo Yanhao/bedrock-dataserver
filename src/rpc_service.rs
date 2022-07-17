@@ -9,7 +9,7 @@ use dataserver::service_pb::{
     TransferShardLeaderRequest, TransferShardLeaderResponse,
 };
 use futures::StreamExt;
-use log::{info, warn};
+use log::{debug, info, warn};
 use tokio::sync::RwLock;
 use tonic::{Request, Response, Status, Streaming};
 
@@ -69,6 +69,8 @@ impl DataService for RealDataServer {
         }
 
         info!("shard write, req: {:?}", req);
+        debug!("shard write: key len: {}", req.get_ref().key.len());
+        debug!("shard write: value len: {}", req.get_ref().value.len());
 
         let shard_id = req.get_ref().shard_id;
         let fsm = match SHARD_MANAGER.write().await.get_shard_fsm(shard_id).await {
@@ -85,7 +87,7 @@ impl DataService for RealDataServer {
                 Entry {
                     index: 0,
                     op: "put".into(),
-                    key: req.get_ref().value.clone(),
+                    key: req.get_ref().key.clone(),
                     value: req.get_ref().value.clone(),
                 },
                 true,
