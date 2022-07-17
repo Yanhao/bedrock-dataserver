@@ -8,20 +8,13 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="997e849c-65d9-4db1-aea1-781dcb19c5e4" name="Default Changelist" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/vcs.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Cargo.lock" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.lock" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/build.rs" beforeDir="false" afterPath="$PROJECT_DIR$/build.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/config.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/config.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/dataserver.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dataserver.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/heartbeat.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/heartbeat.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/lib.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lib.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/metadata.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/metadata.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/net/tcp_server.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/net/tcp_server.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/proto/service.proto" beforeDir="false" afterPath="$PROJECT_DIR$/src/proto/service.proto" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/error.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/error.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/rpc_service.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/rpc_service.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/shard/fsm.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/shard/fsm.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/shard/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/shard/mod.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/shard/shard.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/shard/shard.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/shard/shard_manager.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/shard/shard_manager.rs" afterDir="false" />
     </list>
@@ -50,20 +43,21 @@
     <option name="selectedIndex" value="1" />
   </component>
   <component name="ProjectId" id="1m6ySgjd9ubwI97IDTKxyrr1PaT" />
+  <component name="ProjectLevelVcsManager" settingsEditedManually="true" />
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "RunOnceActivity.OpenProjectViewOnStart": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "WebServerToolWindowFactoryState": "false",
-    "last_opened_file_path": "/Users/bytedance/code/bedrock/bedrock-dataserver",
-    "org.rust.cargo.project.model.PROJECT_DISCOVERY": "true",
-    "settings.editor.selected.configurable": "language.rust.cargo.check"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;RunOnceActivity.OpenProjectViewOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;WebServerToolWindowFactoryState&quot;: &quot;false&quot;,
+    &quot;last_opened_file_path&quot;: &quot;/Users/bytedance/code/bedrock/bedrock-dataserver&quot;,
+    &quot;org.rust.cargo.project.model.PROJECT_DISCOVERY&quot;: &quot;true&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;language.rust.cargo.check&quot;
   }
-}]]></component>
+}</component>
   <component name="RustProjectSettings">
     <option name="toolchainHomeDirectory" value="$USER_HOME$/.cargo/bin" />
     <option name="version" value="2" />
@@ -86,6 +80,8 @@
       <workItem from="1649943263932" duration="2000" />
       <workItem from="1650028810712" duration="341000" />
       <workItem from="1650029397457" duration="890000" />
+      <workItem from="1652465252534" duration="2071000" />
+      <workItem from="1652679193910" duration="596000" />
     </task>
     <servers />
   </component>

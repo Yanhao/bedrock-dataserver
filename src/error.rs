@@ -2,53 +2,53 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum DataServerError {
-    #[error("")]
+    #[error("failed to stop tcp server")]
     FailedToStopTcpServer,
-    #[error("")]
+    #[error("connection closed")]
     ConnectionClosed,
-    #[error("")]
+    #[error("failed to receive")]
     FailedToReceive,
-    #[error("")]
+    #[error("failed to send")]
     FailedToSend,
-    #[error("")]
+    #[error("failed to connect")]
     FailedToConnect,
-    #[error("")]
+    #[error("invalid toml file")]
     InvalidToml,
-    #[error("")]
+    #[error("failed to create")]
     FailedToCreate,
-    #[error("")]
+    #[error("failed to open")]
     FailedToOpen,
-    #[error("")]
+    #[error("failed to read")]
     FailedToRead,
-    #[error("")]
+    #[error("failed to write")]
     FailedToWrite,
-    #[error("")]
+    #[error("failed to seek")]
     FailedToSeek,
-    #[error("")]
+    #[error("too many connections")]
     TooManyConnections,
 
-    #[error("")]
+    #[error("journal file full")]
     JournalFileFull,
-    #[error("")]
+    #[error("journal unused")]
     JournalUnUsed,
-    #[error("")]
+    #[error("journal file all flushed")]
     JournalFileAllFlushed,
-    #[error("")]
+    #[error("jounal exists")]
     JournalExists,
-    #[error("")]
+    #[error("failed to open directory")]
     OpenDirFailed,
-    #[error("")]
+    #[error("invalid journal directory")]
     InvalidJournalDir,
-    #[error("")]
+    #[error("no such journal directory")]
     NoJournalDir,
-    #[error("")]
+    #[error("invalid offset")]
     InvalidOffset,
 
-    #[error("")]
+    #[error("path not exists")]
     PathNotExists,
-    #[error("")]
+    #[error("path is directory")]
     IsDir,
 
-    #[error("")]
+    #[error("unknown")]
     Unknown,
 }
