@@ -95,31 +95,31 @@ impl DataService for RealDataServer {
 
         entry.wait().await;
 
-        let replicates = fsm.read().await.shard.read().await.get_replicates();
+        // let replicates = fsm.read().await.shard.read().await.get_replicates();
 
-        for addr in replicates {
-            let client = CONNECTIONS
-                .write()
-                .await
-                .get_conn(addr.to_string())
-                .await
-                .unwrap();
+        // for addr in replicates {
+        //     let client = CONNECTIONS
+        //         .write()
+        //         .await
+        //         .get_conn(addr.to_string())
+        //         .await
+        //         .unwrap();
 
-            client
-                .write()
-                .await
-                .shard_append_log(ShardAppendLogRequest {
-                    shard_id,
-                    entries: vec![shard_append_log_request::Entry {
-                        index: entry.entry.index,
-                        op: "put".into(),
-                        key: entry.entry.key.clone(),
-                        value: entry.entry.value.clone(),
-                    }],
-                })
-                .await
-                .unwrap();
-        }
+        //     client
+        //         .write()
+        //         .await
+        //         .shard_append_log(ShardAppendLogRequest {
+        //             shard_id,
+        //             entries: vec![shard_append_log_request::Entry {
+        //                 index: entry.entry.index,
+        //                 op: "put".into(),
+        //                 key: entry.entry.key.clone(),
+        //                 value: entry.entry.value.clone(),
+        //             }],
+        //         })
+        //         .await
+        //         .unwrap();
+        // }
 
         Ok(Response::new(ShardWriteResponse::default()))
     }
