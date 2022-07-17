@@ -16,6 +16,7 @@ anyhow = "1.0"
 # raft = { git = "https://github.com/tikv/raft-rs", version = "0.6.0-alpha", default-features = false, features = ["prost-codec", "default-logger"] }
 raft = { version = "0.6", default-features = false, features = ["prost-codec", "default-logger"] }
 tokio = { version = "1", features = ["full"] }
+futures-util = "0.3.21"
 prost = "0.7"
 prost-types = "0.7"
 tonic = "0.4"

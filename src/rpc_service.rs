@@ -78,19 +78,24 @@ impl DataService for RealDataServer {
             Ok(s) => s,
         };
 
-        let entry = fsm
+        let mut entry = fsm
             .write()
             .await
-            .apply(Entry {
-                index: 0,
-                op: "put".into(),
-                key: req.get_ref().value.clone(),
-                value: req.get_ref().value.clone(),
-            })
+            .apply(
+                Entry {
+                    index: 0,
+                    op: "put".into(),
+                    key: req.get_ref().value.clone(),
+                    value: req.get_ref().value.clone(),
+                },
+                true,
+            )
             .await
             .unwrap();
 
-        let replicates = fsm.read().await.shard.get_replicates();
+        entry.wait().await;
+
+        let replicates = fsm.read().await.shard.read().await.get_replicates();
 
         for addr in replicates {
             let client = CONNECTIONS
@@ -225,15 +230,17 @@ impl DataService for RealDataServer {
             .unwrap();
 
         for e in req.get_ref().entries.iter() {
-            // FIXME: should use version in Entry
             fsm.write()
                 .await
-                .apply(replog_pb::Entry {
-                    op: e.op.clone(),
-                    index: e.index,
-                    key: e.key.clone(),
-                    value: e.value.clone(),
-                })
+                .apply(
+                    replog_pb::Entry {
+                        op: e.op.clone(),
+                        index: e.index,
+                        key: e.key.clone(),
+                        value: e.value.clone(),
+                    },
+                    false,
+                )
                 .await
                 .unwrap();
         }
@@ -254,6 +261,8 @@ impl DataService for RealDataServer {
         info!("shard install snapshot");
 
         let mut in_stream = req.into_inner();
+        let mut first_piece = true;
+
         while let Some(result) = in_stream.next().await {
             if let Err(_) = result {
                 break;
@@ -273,19 +282,23 @@ impl DataService for RealDataServer {
                 .await
                 .unwrap();
 
-            fsm.as_ref().write().await.shard.clear().await;
+            if first_piece {
+                fsm.as_ref().write().await.shard.write().await.clear().await;
+                first_piece = false;
+            }
 
             fsm.as_ref()
                 .write()
                 .await
                 .shard
+                .write()
+                .await
                 .install_snapshot(&piece.data_piece)
                 .await
                 .unwrap();
         }
 
-        let resp = Response::new(ShardInstallSnapshotResponse {});
-        Ok(resp)
+        Ok(Response::new(ShardInstallSnapshotResponse {}))
     }
 
     async fn transfer_shard_leader(
@@ -312,7 +325,13 @@ impl DataService for RealDataServer {
             socks.push(addr);
         }
 
-        fsm.write().await.shard.set_replicates(&socks).unwrap();
+        fsm.write()
+            .await
+            .shard
+            .write()
+            .await
+            .set_replicates(&socks)
+            .unwrap();
 
         Ok(Response::new(TransferShardLeaderResponse {}))
     }

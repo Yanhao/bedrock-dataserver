@@ -2,21 +2,24 @@ use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
 use anyhow::Result;
-use log::warn;
+use log::{info, warn};
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tonic::Request;
+use futures_util::stream;
 
 use dataserver::replog_pb::Entry;
-use dataserver::service_pb::{shard_append_log_request, ShardAppendLogRequest};
+use dataserver::service_pb::{shard_append_log_request, ShardAppendLogRequest, ShardInstallSnapshotRequest};
 
 use crate::connections::CONNECTIONS;
-
-use super::{order_keeper::OrderKeeper, replicate_log::ReplicateLog, Shard};
+use crate::shard::order_keeper::OrderKeeper;
+use crate::shard::replicate_log::ReplicateLog;
+use crate::shard::snapshoter::SnapShoter;
+use crate::shard::Shard;
 
 const INPUT_CHANNEL_LEN: usize = 10240;
 
 pub struct Fsm {
-    pub shard: Shard,
+    pub shard: Arc<RwLock<Shard>>,
     rep_log: Arc<RwLock<ReplicateLog>>,
     next_index: AtomicU64,
     order_keeper: OrderKeeper,
@@ -34,10 +37,16 @@ pub struct EntryWithNotifierReceiver {
     receiver: mpsc::Receiver<()>,
 }
 
+impl EntryWithNotifierReceiver {
+    pub async fn wait(&mut self) {
+        self.receiver.recv().await;
+    }
+}
+
 impl Fsm {
     pub fn new(shard: Shard, rep_log: Arc<RwLock<ReplicateLog>>) -> Self {
         Self {
-            shard,
+            shard: Arc::new(RwLock::new(shard)),
             rep_log,
             next_index: 0.into(),
             order_keeper: OrderKeeper::new(),
@@ -46,11 +55,6 @@ impl Fsm {
         }
     }
 
-    // pub async fn append(&self, entry: Entry) -> Result<()> {
-    //     self.input.lock().await.as_ref().unwrap().send(entry).await;
-    //     Ok(())
-    // }
-
     pub async fn start(&mut self) -> Result<()> {
         let (tx, mut rx) = mpsc::channel(1);
         *self.stop_ch.lock().await = Some(tx);
@@ -58,11 +62,14 @@ impl Fsm {
         let (input_tx, mut input_rx) = mpsc::channel(INPUT_CHANNEL_LEN);
         *self.input.lock().await = Some(input_tx);
 
-        let replicates = self.shard.get_replicates();
-        let shard_id = self.shard.shard_id;
+        let replicates = self.shard.read().await.get_replicates();
+        let shard_id = self.shard.read().await.shard_id;
         let rep_log = self.rep_log.clone();
+        let shard = self.shard.clone();
 
         tokio::spawn(async move {
+            info!("start append entry task for shard: {}", shard_id);
+
             loop {
                 tokio::select! {
                     _ = rx.recv() => {
@@ -100,9 +107,17 @@ impl Fsm {
                             }
 
                             let entries_res =  rep_log.read().await.entries(last_applied_index, en.entry.index, 1024) ;
-                            if let Err(e) = entries_res {
+                            if let Err(_) = entries_res {
+                                let snap = shard.read().await.create_snapshot().await.unwrap();
 
-                                // TODO send snapshot
+                                let mut req_stream = vec![];
+                                for i in snap.iter() {
+                                    req_stream.push(ShardInstallSnapshotRequest{shard_id, data_piece: i.to_vec()})
+                                }
+
+                                client.unwrap().write().await.shard_install_snapshot(Request::new(stream::iter(req_stream))).await.unwrap();
+                                // ref: https://github.com/hyperium/tonic/blob/master/examples/routeguide-tutorial.md
+
                                 continue
                             }
 
@@ -125,10 +140,13 @@ impl Fsm {
                                 warn!("failed to append_log, err: {}", e)
                             }
                         }
+
                         en.sender.send(()).await.unwrap();
                     }
                 }
             }
+
+            info!("stop append entry task for shard: {}", shard_id);
         });
 
         Ok(())
@@ -145,11 +163,17 @@ impl Fsm {
             .unwrap();
     }
 
-    pub async fn apply(&mut self, entry: Entry) -> Result<EntryWithNotifierReceiver> {
+    pub async fn apply(
+        &mut self,
+        entry: Entry,
+        generate_index: bool,
+    ) -> Result<EntryWithNotifierReceiver> {
         let mut entry = entry.clone();
-        entry.index = self
-            .next_index
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if generate_index {
+            entry.index = self
+                .next_index
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
 
         let (tx, rx) = mpsc::channel(3);
 
@@ -175,6 +199,8 @@ impl Fsm {
 
         if entry.op == "put" {
             self.shard
+                .write()
+                .await
                 .put(entry.key.as_slice(), entry.value.as_slice())
                 .await
                 .unwrap();
@@ -191,6 +217,6 @@ impl Fsm {
     }
 
     pub async fn get(&self, key: &[u8]) -> Result<Vec<u8>> {
-        self.shard.get(key).await
+        self.shard.read().await.get(key).await
     }
 }

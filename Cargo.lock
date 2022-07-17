@@ -212,6 +212,7 @@ dependencies = [
  "clap",
  "fern",
  "futures",
+ "futures-util",
  "get_if_addrs",
  "lazy_static",
  "libc",

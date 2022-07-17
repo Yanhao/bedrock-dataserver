@@ -39,14 +39,20 @@ impl ShardManager {
     }
 
     pub async fn create_shard_fsm(&mut self, fsm: Fsm) -> Result<()> {
-        if self.shards.read().await.contains_key(&(fsm.shard.shard_id)) {
+        if self
+            .shards
+            .read()
+            .await
+            .contains_key(&(fsm.shard.read().await.shard_id))
+        {
             bail!(ShardError::ShardExists);
         }
 
+        let shard_id = fsm.shard.read().await.shard_id;
         self.shards
             .write()
             .await
-            .insert(fsm.shard.shard_id, Arc::new(RwLock::new(fsm)));
+            .insert(shard_id, Arc::new(RwLock::new(fsm)));
 
         Ok(())
     }

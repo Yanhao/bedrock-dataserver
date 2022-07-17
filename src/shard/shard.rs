@@ -9,8 +9,7 @@ use tokio::sync::RwLock;
 use tonic::async_trait;
 
 use crate::shard::error;
-
-use super::snapshoter::SnapShoter;
+use crate::shard::snapshoter::SnapShoter;
 
 pub struct Shard {
     pub shard_id: u64,
