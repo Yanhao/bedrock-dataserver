@@ -17,8 +17,9 @@ pub struct Shard {
     pub create_ts: time::SystemTime,
     pub replicates: Vec<SocketAddr>,
     pub replicates_update_ts: time::SystemTime,
+    pub is_leader: bool,
     pub leader: Option<SocketAddr>,
-    pub leader_change_ts: time::SystemTime,
+    pub leader_change_ts: time::SystemTime, // TODO: maybe we should use term, not ts here
 
     pub kv_data: RwLock<HashMap<Vec<u8>, Vec<u8>>>,
 }
@@ -31,6 +32,7 @@ impl Shard {
             create_ts: time::SystemTime::now(),
             replicates: Vec::new(),
             replicates_update_ts: time::SystemTime::now(),
+            is_leader: false,
             leader: Some("0.0.0.0:1024".parse().unwrap()),
             leader_change_ts: time::SystemTime::now(),
 
@@ -85,6 +87,14 @@ impl Shard {
     pub fn set_replicates(&mut self, replicats: &[SocketAddr]) -> Result<()> {
         self.replicates = replicats.to_owned();
         Ok(())
+    }
+
+    pub fn set_is_leader(&mut self, l: bool) {
+        self.is_leader = l
+    }
+
+    pub fn update_leader_change_ts(&mut self, t: time::SystemTime) {
+        self.leader_change_ts = t;
     }
 }
 

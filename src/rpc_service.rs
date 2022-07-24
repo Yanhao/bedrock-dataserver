@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time;
 
 use anyhow::Result;
 use dataserver::replog_pb::{self, Entry};
 use dataserver::service_pb::{
-    shard_append_log_request, ShardInstallSnapshotRequest, ShardInstallSnapshotResponse,
-    TransferShardLeaderRequest, TransferShardLeaderResponse,
+    ShardInstallSnapshotRequest, ShardInstallSnapshotResponse, TransferShardLeaderRequest,
+    TransferShardLeaderResponse,
 };
 use futures::StreamExt;
 use log::{debug, info, warn};
@@ -20,7 +21,6 @@ use dataserver::service_pb::{
     ShardWriteResponse,
 };
 
-use crate::connections::CONNECTIONS;
 use crate::param_check;
 use crate::shard::SnapShoter;
 use crate::shard::{self, Fsm, ReplicateLog, SHARD_MANAGER};
@@ -80,7 +80,7 @@ impl DataService for RealDataServer {
             Ok(s) => s,
         };
 
-        let mut entry = fsm
+        let mut entry_notifier = fsm
             .write()
             .await
             .apply(
@@ -95,35 +95,11 @@ impl DataService for RealDataServer {
             .await
             .unwrap();
 
-        entry.wait().await;
+        if let Err(shard::ShardError::NotLeader) = entry_notifier.wait_result().await {
+            return Ok(Response::new(ShardWriteResponse { not_leader: true }));
+        }
 
-        // let replicates = fsm.read().await.shard.read().await.get_replicates();
-
-        // for addr in replicates {
-        //     let client = CONNECTIONS
-        //         .write()
-        //         .await
-        //         .get_conn(addr.to_string())
-        //         .await
-        //         .unwrap();
-
-        //     client
-        //         .write()
-        //         .await
-        //         .shard_append_log(ShardAppendLogRequest {
-        //             shard_id,
-        //             entries: vec![shard_append_log_request::Entry {
-        //                 index: entry.entry.index,
-        //                 op: "put".into(),
-        //                 key: entry.entry.key.clone(),
-        //                 value: entry.entry.value.clone(),
-        //             }],
-        //         })
-        //         .await
-        //         .unwrap();
-        // }
-
-        Ok(Response::new(ShardWriteResponse::default()))
+        return Ok(Response::new(ShardWriteResponse::default()));
     }
 
     async fn create_shard(
@@ -146,6 +122,7 @@ impl DataService for RealDataServer {
         let shard_id = req.get_ref().shard_id;
         let new_shard = shard::Shard {
             shard_id,
+            is_leader: false,
             storage_id: req.get_ref().storage_id,
             create_ts: req.get_ref().create_ts.to_owned().unwrap().into(),
             leader: if req.get_ref().leader == "" {
@@ -231,6 +208,23 @@ impl DataService for RealDataServer {
             .await
             .unwrap();
 
+        let leader_change_leader_ts: time::SystemTime =
+            req.get_ref().leader_change_ts.to_owned().unwrap().into();
+
+        let shard = fsm.read().await.shard.clone();
+        if shard.read().await.leader_change_ts > leader_change_leader_ts {
+            let resp = Response::new(ShardAppendLogResponse {
+                is_old_leader: true,
+                last_applied_index: 0,
+            });
+            return Ok(resp);
+        }
+
+        shard
+            .write()
+            .await
+            .update_leader_change_ts(leader_change_leader_ts);
+
         for e in req.get_ref().entries.iter() {
             fsm.write()
                 .await
@@ -250,6 +244,7 @@ impl DataService for RealDataServer {
         let last_index = fsm.read().await.last_index().await;
 
         let resp = Response::new(ShardAppendLogResponse {
+            is_old_leader: false,
             last_applied_index: last_index,
         });
 
@@ -327,13 +322,9 @@ impl DataService for RealDataServer {
             socks.push(addr);
         }
 
-        fsm.write()
-            .await
-            .shard
-            .write()
-            .await
-            .set_replicates(&socks)
-            .unwrap();
+        let shard = fsm.write().await.shard.clone();
+        shard.write().await.set_replicates(&socks).unwrap();
+        shard.write().await.set_is_leader(true);
 
         Ok(Response::new(TransferShardLeaderResponse {}))
     }

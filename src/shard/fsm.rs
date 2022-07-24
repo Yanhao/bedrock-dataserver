@@ -2,15 +2,18 @@ use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
 use anyhow::Result;
+use futures_util::stream;
 use log::{info, warn};
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tonic::Request;
-use futures_util::stream;
 
 use dataserver::replog_pb::Entry;
-use dataserver::service_pb::{shard_append_log_request, ShardAppendLogRequest, ShardInstallSnapshotRequest};
+use dataserver::service_pb::{
+    shard_append_log_request, ShardAppendLogRequest, ShardInstallSnapshotRequest,
+};
 
 use crate::connections::CONNECTIONS;
+use crate::shard::error::ShardError;
 use crate::shard::order_keeper::OrderKeeper;
 use crate::shard::replicate_log::ReplicateLog;
 use crate::shard::snapshoter::SnapShoter;
@@ -29,17 +32,17 @@ pub struct Fsm {
 
 pub struct EntryWithNotifierSender {
     pub entry: Entry,
-    sender: mpsc::Sender<()>,
+    sender: mpsc::Sender<Result<(), ShardError>>,
 }
 
 pub struct EntryWithNotifierReceiver {
     pub entry: Entry,
-    receiver: mpsc::Receiver<()>,
+    receiver: mpsc::Receiver<Result<(), ShardError>>,
 }
 
 impl EntryWithNotifierReceiver {
-    pub async fn wait(&mut self) {
-        self.receiver.recv().await;
+    pub async fn wait_result(&mut self) -> Result<(), ShardError> {
+        self.receiver.recv().await.unwrap()
     }
 }
 
@@ -70,7 +73,7 @@ impl Fsm {
         tokio::spawn(async move {
             info!("start append entry task for shard: {}", shard_id);
 
-            loop {
+            'outer: loop {
                 tokio::select! {
                     _ = rx.recv() => {
                         break;
@@ -78,13 +81,14 @@ impl Fsm {
                     e = input_rx.recv() => {
                         let en = e.unwrap();
 
-                        for addr in replicates.iter() {
+                        'inner: for addr in replicates.iter() {
                             let addr_str = addr.to_string();
 
                             let client = CONNECTIONS.write().await.get_conn(addr_str).await;
 
                             let request = Request::new(ShardAppendLogRequest {
                                 shard_id,
+                                leader_change_ts: Some(shard.read().await.leader_change_ts.into()),
                                 entries: vec![
                                     shard_append_log_request::Entry {
                                         op: en.entry.op.clone(),
@@ -95,15 +99,23 @@ impl Fsm {
                                 ],
                             });
 
-                            let resp =  client.as_ref().unwrap().write().await.shard_append_log(request).await;
-                            if let Err(e) = resp {
-                                warn!("failed to  append_log, err {}", e);
-                                continue
+                            let resp = match client.as_ref().unwrap().write().await.shard_append_log(request).await {
+                                Err(e) => {
+                                    warn!("failed to  append_log, err {}", e);
+                                    continue 'inner;
+
+                                },
+                                Ok(v) => v,
+                            };
+                            if resp.get_ref().is_old_leader {
+                                en.sender.send(Err(ShardError::NotLeader)).await.unwrap();
+                                continue 'outer;
                             }
 
-                            let last_applied_index = resp.unwrap().get_ref().last_applied_index;
+
+                            let last_applied_index = resp.get_ref().last_applied_index;
                             if last_applied_index >= en.entry.index {
-                                continue
+                                continue 'inner;
                             }
 
                             let entries_res =  rep_log.read().await.entries(last_applied_index, en.entry.index, 1024) ;
@@ -118,13 +130,14 @@ impl Fsm {
                                 client.unwrap().write().await.shard_install_snapshot(Request::new(stream::iter(req_stream))).await.unwrap();
                                 // ref: https://github.com/hyperium/tonic/blob/master/examples/routeguide-tutorial.md
 
-                                continue
+                                continue 'inner;
                             }
 
                             let ents = entries_res.unwrap();
 
                             let request = Request::new(ShardAppendLogRequest {
                                 shard_id,
+                                leader_change_ts: Some(shard.read().await.leader_change_ts.into()),
                                 entries: ents.iter().map(|ent| {
                                     shard_append_log_request::Entry {
                                         op: ent.op.clone(),
@@ -135,13 +148,20 @@ impl Fsm {
                                 }).collect(),
                             }) ;
 
-                            let resp = client.unwrap().write().await.shard_append_log(request).await;
-                            if let Err(e) = resp {
-                                warn!("failed to append_log, err: {}", e)
+                            let resp = match client.unwrap().write().await.shard_append_log(request).await{
+                                Err(e) => {
+                                    warn!("failed to append_log, err: {}", e);
+                                    continue 'inner;
+                                },
+                                Ok(v) => v,
+                            };
+                            if resp.get_ref().is_old_leader {
+                                en.sender.send(Err(ShardError::NotLeader)).await.unwrap();
+                                continue 'outer;
                             }
                         }
 
-                        en.sender.send(()).await.unwrap();
+                        en.sender.send(Ok(())).await.unwrap();
                     }
                 }
             }

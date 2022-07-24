@@ -23,4 +23,7 @@ pub enum ShardError {
     TimeOut,
     #[error("ignore this order")]
     IgnoreOrder,
+
+    #[error("not leader")]
+    NotLeader,
 }
