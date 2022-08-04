@@ -26,6 +26,7 @@ mod metadata;
 mod param_check;
 mod rpc_service;
 mod shard;
+mod wal;
 
 fn setup_logger() -> Result<()> {
     let color = ColoredLevelConfig::new()
