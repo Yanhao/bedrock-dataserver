@@ -5,7 +5,9 @@ use anyhow::{bail, Result};
 use once_cell::sync::Lazy;
 use tokio::sync::RwLock;
 
-use super::{error::ShardError, fsm::Fsm};
+use crate::wal::WalManager;
+
+use super::{error::ShardError, fsm::Fsm, Shard};
 
 const DEFAULT_SHARD_CAPACITY: u64 = 10240;
 
@@ -21,6 +23,20 @@ impl ShardManager {
         return ShardManager {
             shards: Default::default(),
         };
+    }
+
+    pub async fn load_shard_fsm(&mut self, shard_id: u64) -> Result<Arc<RwLock<Fsm>>> {
+        let shard = Shard::load_shard(shard_id).await;
+        let fsm = Arc::new(RwLock::new(Fsm::new(
+            shard,
+            Arc::new(RwLock::new(
+                WalManager::load_wal_by_shard_id(shard_id).await.unwrap(),
+            )),
+        )));
+
+        self.shards.write().await.insert(shard_id, fsm.clone());
+
+        Ok(fsm)
     }
 
     pub async fn get_shard_fsm(&self, id: u64) -> Result<Arc<RwLock<Fsm>>> {
@@ -43,12 +59,12 @@ impl ShardManager {
             .shards
             .read()
             .await
-            .contains_key(&(fsm.shard.read().await.shard_id))
+            .contains_key(&(fsm.shard.read().await.get_shard_id()))
         {
             bail!(ShardError::ShardExists);
         }
 
-        let shard_id = fsm.shard.read().await.shard_id;
+        let shard_id = fsm.shard.read().await.get_shard_id();
         self.shards
             .write()
             .await

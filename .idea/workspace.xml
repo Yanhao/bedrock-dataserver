@@ -8,15 +8,7 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="997e849c-65d9-4db1-aea1-781dcb19c5e4" name="Default Changelist" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/vcs.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Cargo.lock" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.lock" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/error.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/error.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/rpc_service.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/rpc_service.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/shard/fsm.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/shard/fsm.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/shard/shard.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/shard/shard.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/shard/shard_manager.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/shard/shard_manager.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -82,6 +74,7 @@
       <workItem from="1650029397457" duration="890000" />
       <workItem from="1652465252534" duration="2071000" />
       <workItem from="1652679193910" duration="596000" />
+      <workItem from="1658560478276" duration="1044000" />
     </task>
     <servers />
   </component>

@@ -22,6 +22,7 @@ mod format;
 mod heartbeat;
 // mod journal;
 mod connections;
+mod kv_store;
 mod metadata;
 mod param_check;
 mod rpc_service;

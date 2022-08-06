@@ -18,12 +18,15 @@ use crate::shard::order_keeper::OrderKeeper;
 use crate::shard::replicate_log::ReplicateLog;
 use crate::shard::snapshoter::SnapShoter;
 use crate::shard::Shard;
+use crate::wal::WalManager;
+use crate::wal::WalTrait;
 
 const INPUT_CHANNEL_LEN: usize = 10240;
 
 pub struct Fsm {
     pub shard: Arc<RwLock<Shard>>,
-    rep_log: Arc<RwLock<ReplicateLog>>,
+    // rep_log: Arc<RwLock<ReplicateLog>>,
+    rep_log: Arc<RwLock<WalManager>>,
     next_index: AtomicU64,
     order_keeper: OrderKeeper,
     stop_ch: Mutex<Option<mpsc::Sender<()>>>,
@@ -47,7 +50,8 @@ impl EntryWithNotifierReceiver {
 }
 
 impl Fsm {
-    pub fn new(shard: Shard, rep_log: Arc<RwLock<ReplicateLog>>) -> Self {
+    // pub fn new(shard: Shard, rep_log: Arc<RwLock<ReplicateLog>>) -> Self {
+    pub fn new(shard: Shard, rep_log: Arc<RwLock<WalManager>>) -> Self {
         Self {
             shard: Arc::new(RwLock::new(shard)),
             rep_log,
@@ -66,7 +70,7 @@ impl Fsm {
         *self.input.lock().await = Some(input_tx);
 
         let replicates = self.shard.read().await.get_replicates();
-        let shard_id = self.shard.read().await.shard_id;
+        let shard_id = self.shard.read().await.get_shard_id();
         let rep_log = self.rep_log.clone();
         let shard = self.shard.clone();
 
@@ -88,7 +92,7 @@ impl Fsm {
 
                             let request = Request::new(ShardAppendLogRequest {
                                 shard_id,
-                                leader_change_ts: Some(shard.read().await.leader_change_ts.into()),
+                                leader_change_ts: Some(shard.read().await.get_leader_change_ts().into()),
                                 entries: vec![
                                     shard_append_log_request::Entry {
                                         op: en.entry.op.clone(),
@@ -118,7 +122,7 @@ impl Fsm {
                                 continue 'inner;
                             }
 
-                            let entries_res =  rep_log.read().await.entries(last_applied_index, en.entry.index, 1024) ;
+                            let entries_res =  rep_log.write().await.entries(last_applied_index, en.entry.index, 1024).await;
                             if let Err(_) = entries_res {
                                 let snap = shard.read().await.create_snapshot().await.unwrap();
 
@@ -137,7 +141,7 @@ impl Fsm {
 
                             let request = Request::new(ShardAppendLogRequest {
                                 shard_id,
-                                leader_change_ts: Some(shard.read().await.leader_change_ts.into()),
+                                leader_change_ts: Some(shard.read().await.get_leader_change_ts().into()),
                                 entries: ents.iter().map(|ent| {
                                     shard_append_log_request::Entry {
                                         op: ent.op.clone(),
@@ -204,6 +208,7 @@ impl Fsm {
             .write()
             .await
             .append(vec![entry.clone()])
+            .await
             .unwrap();
 
         self.input

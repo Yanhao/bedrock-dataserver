@@ -43,6 +43,7 @@ pub struct Configuration {
     pub work_directory: Option<String>,
     pub disk_type: Option<DiskType>,
     pub managers: Option<Vec<String>>,
+    pub wal_directory: Option<String>,
 }
 
 impl Configuration {

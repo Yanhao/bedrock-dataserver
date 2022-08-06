@@ -3,11 +3,14 @@ use std::path::{Path, PathBuf};
 use std::slice;
 
 use anyhow::{anyhow, bail, Result};
-use log::{debug, error, info};
+use log::error;
+use prost::Message;
 use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 use super::error::WalError;
+
+use dataserver::replog_pb::Entry;
 
 const MAX_META_COUNT: u64 = 1024;
 const WAL_MAGIC: u64 = 0x12345;
@@ -16,27 +19,29 @@ const WAL_MAGIC: u64 = 0x12345;
 pub struct WalEntryMeta {
     pub entry_offset: u64,
     pub version: u64,
-}
+} // 16 byte fixed
 
 #[repr(C, packed)]
 pub struct WalEntryHeader {
     pub offset: u64,
-    pub key_length: u64,
-    pub value_length: u64,
-
     pub prev_entry_offset: u64,
-
     pub version: u64,
 
+    pub entry_length: u64,
+
+    pub padding_: [u8; 128 - 48],
+
     pub checksum: u64,
-}
+} // 128 byte fixed
 
 #[repr(C, packed)]
 pub struct WalHeader {
     pub magic: u64,
     pub format: u8,
-    pub first_entry_offset: u64,
-}
+    pub first_entry_offset: u64, // always 4096
+
+    pub padding_: [u8; 4096 - 17],
+} // 4k fixed
 
 #[repr(C, packed)]
 pub struct WalFooter {
@@ -45,7 +50,9 @@ pub struct WalFooter {
 
     pub start_version: u64,
     pub end_version: u64,
-}
+
+    pub padding_: [u8; 4096 - 28],
+} // 4k fixed
 
 pub struct WalFile {
     pub header: Box<WalHeader>,
@@ -98,6 +105,8 @@ impl WalFile {
         let mut metas = vec![];
         let mut wal_entry_offset = header.first_entry_offset;
 
+        let mut sealed = false;
+
         loop {
             file.seek(SeekFrom::Start(wal_entry_offset))
                 .await
@@ -112,25 +121,53 @@ impl WalFile {
                 )
             };
 
-            if let Err(e) = file.read(data).await {
-                info!(
-                    "failed to read wal entry header at {:?}, err: {:?}",
-                    wal_entry_offset, e
-                );
-                bail!(WalError::FailedToRead);
+            match file.read(data).await {
+                Err(e) => {
+                    error!(
+                        "failed to read wal entry header at {:?}, err: {:?}",
+                        wal_entry_offset, e
+                    );
+                    bail!(WalError::FailedToRead);
+                }
+                Ok(v) => {
+                    if v == 0 {
+                        sealed = false;
+                        break;
+                    }
+                }
             }
 
             metas.push(WalEntryMeta {
-                entry_offset: entry_header.offset,
                 version: entry_header.version,
+                entry_offset: entry_header.offset,
+            });
+
+            wal_entry_offset += std::mem::size_of::<WalEntryHeader>() as u64;
+        }
+
+        if !sealed {
+            return Ok(Self {
+                header: Box::new(header),
+                footer: None,
+
+                sealed,
+                file,
+                path: path.as_ref().to_path_buf(),
+
+                next_entry_offset: wal_entry_offset,
+
+                start_version: metas.first().unwrap().version,
+                end_version: metas.last().unwrap().version,
+
+                wal_entry_index: metas,
             });
         }
 
         let file_size = file.metadata().await.unwrap().len();
         let footer_offset = file_size - 4096;
 
-        let mut footer: WalFooter = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
-        let mut data = unsafe {
+        let footer: WalFooter = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
+        let data = unsafe {
             slice::from_raw_parts_mut(
                 &mut header as *mut _ as *mut u8,
                 std::mem::size_of::<WalFooter>(),
@@ -152,39 +189,37 @@ impl WalFile {
 
         Ok(Self {
             header: Box::new(header),
-            wal_entry_index: metas,
-            footer: Some(Box::new(footer)),
 
             file,
             path: path.as_ref().to_path_buf(),
 
             next_entry_offset: wal_entry_offset,
-            sealed: if metas.len() as u64 == MAX_META_COUNT {
-                true
-            } else {
-                false
-            },
-            start_version: 0,
-            end_version: 0,
+            sealed,
+            start_version: footer.start_version,
+            end_version: footer.end_version,
+
+            footer: Some(Box::new(footer)),
+            wal_entry_index: metas,
         })
     }
 
-    pub async fn append_entry(&mut self, key: &[u8], value: &[u8], version: u64) -> Result<()> {
+    pub async fn append_entry(&mut self, ent: Entry) -> Result<()> {
         let meta = WalEntryMeta {
             entry_offset: self.next_entry_offset,
-            version,
+            version: ent.index,
         };
 
         let entry_header = WalEntryHeader {
             offset: meta.entry_offset,
-            key_length: key.len() as u64,
-            value_length: value.len() as u64,
-            version,
+            entry_length: ent.encoded_len() as u64,
+
+            version: ent.index,
             checksum: 0,
             prev_entry_offset: 1,
+            padding_: [0; 80],
         };
 
-        let mut entry_buf = Vec::<u8>::new();
+        let mut entry_buf = vec![];
 
         let entry_header_data: &[u8] = unsafe {
             slice::from_raw_parts(
@@ -195,8 +230,10 @@ impl WalFile {
 
         // TODO: use writev to eliminate copy
         entry_buf.append(&mut entry_header_data.to_owned());
-        entry_buf.append(&mut key.to_owned());
-        entry_buf.append(&mut value.to_owned());
+
+        let mut buf = Vec::new();
+        ent.encode(&mut buf).unwrap();
+        entry_buf.append(&mut buf);
 
         self.next_entry_offset += entry_buf.len() as u64;
         self.file
@@ -236,6 +273,7 @@ impl WalFile {
             magic: WAL_MAGIC,
             format: 0x1,
             first_entry_offset: 4096,
+            padding_: [0; 4079],
         };
 
         let wal_header_as_data = unsafe {
@@ -292,6 +330,8 @@ impl WalFile {
 
             start_version: self.wal_entry_index[0].version,
             end_version: self.wal_entry_index[l - 1].version,
+
+            padding_: [0; 4068],
         };
 
         let footer_data = unsafe {
@@ -323,7 +363,10 @@ impl WalFile {
     }
 
     pub fn suffix(&self) -> u64 {
-        todo!()
+        let path = self.path.as_os_str().to_str().unwrap();
+        let suffix_str = path.split(".").last().unwrap();
+        let suffix = suffix_str.parse().unwrap();
+        suffix
     }
 
     pub fn is_sealed(&self) -> bool {
@@ -331,10 +374,10 @@ impl WalFile {
     }
 
     pub fn entry_len(&self) -> u64 {
-        todo!()
+        self.wal_entry_index.len() as u64
     }
 
-    pub async fn entries(&mut self, start_version: u64, end_version: u64) -> Result<Vec<Vec<u8>>> {
+    pub async fn entries(&mut self, start_version: u64, end_version: u64) -> Result<Vec<Entry>> {
         if start_version < self.start_version || end_version > self.end_version {
             bail!(WalError::InvalidParameter);
         }
@@ -346,24 +389,24 @@ impl WalFile {
 
         let mut ret = vec![];
         for m in target_meta.iter() {
-            self.file.seek(SeekFrom::Start(m.entry_offset)).await; // TODO error
+            self.file
+                .seek(SeekFrom::Start(m.entry_offset))
+                .await
+                .unwrap(); // TODO error
 
             let mut buf = vec![];
             buf.resize(std::mem::size_of::<WalEntryMeta>(), 0);
-            self.file.read(&mut buf).await;
+            self.file.read(&mut buf).await.unwrap();
 
             let header_len = std::mem::size_of::<WalEntryHeader>();
             let entry_header: WalEntryHeader =
                 unsafe { std::ptr::read(buf[0..header_len].as_ptr() as *const _) };
 
-            let key = &buf[header_len..header_len + entry_header.key_length as usize].to_owned();
-            let value = &buf[header_len + entry_header.key_length as usize
-                ..header_len
-                    + entry_header.key_length as usize
-                    + entry_header.value_length as usize]
-                .to_owned();
+            let ent =
+                Entry::decode(&buf[header_len..header_len + entry_header.entry_length as usize])
+                    .unwrap();
 
-            ret.push(buf[header_len..].to_owned());
+            ret.push(ent);
         }
 
         Ok(ret)

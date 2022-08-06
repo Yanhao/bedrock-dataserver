@@ -1,9 +1,15 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, Result};
+use async_trait::async_trait;
+use chrono::format::format;
+
+use crate::config::CONFIG;
 
 use super::error::WalError;
-use super::wal_file;
+use super::{wal_file, WalTrait};
+
+use dataserver::replog_pb::Entry;
 
 pub struct WalManager {
     wal_files: Vec<wal_file::WalFile>,
@@ -11,6 +17,25 @@ pub struct WalManager {
 }
 
 impl WalManager {
+    pub async fn load_wal_by_shard_id(shard_id: u64) -> Result<WalManager> {
+        let wal_dir: PathBuf = CONFIG
+            .read()
+            .unwrap()
+            .wal_directory
+            .as_ref()
+            .unwrap()
+            .into();
+
+        let storage_id: u32 = ((shard_id & 0xFFFF0000) >> 32) as u32;
+        let shard_id: u32 = (shard_id & 0x0000FFFF) as u32;
+
+        let wal_manager_dir = wal_dir
+            .join::<String>(format!("{:#04x}", storage_id))
+            .join::<String>(format!("{:#04x}", shard_id));
+
+        return WalManager::load(wal_manager_dir).await;
+    }
+
     pub async fn load(dir: impl AsRef<Path>) -> Result<WalManager> {
         if !dir.as_ref().exists() {
             bail!(WalError::FileExists);
@@ -36,12 +61,20 @@ impl WalManager {
         })
     }
 
-    pub async fn entries(
-        &mut self,
-        mut lo: u64,
-        hi: u64,
-        max_size: u64,
-    ) -> Result<Vec<Vec<Vec<u8>>>> {
+    fn generate_new_wal_file_path(&self) -> PathBuf {
+        if self.wal_files.len() == 0 {
+            return "wal.0".to_owned().into();
+        }
+
+        let suffix = self.wal_files.last().unwrap().suffix();
+
+        format!("wal.{}", suffix).to_owned().into()
+    }
+}
+
+#[async_trait]
+impl WalTrait for WalManager {
+    async fn entries(&mut self, mut lo: u64, hi: u64, max_size: u64) -> Result<Vec<Entry>> {
         if self.wal_files.len() == 0 {
             bail!(WalError::EmptyWalFiles);
         }
@@ -58,7 +91,7 @@ impl WalManager {
             bail!(WalError::InvalidParameter);
         }
 
-        let mut ret = Vec::new();
+        let mut ret = vec![];
 
         let first_index = self.first_index();
         let last_index = self.last_index();
@@ -89,8 +122,8 @@ impl WalManager {
                 Err(e) => {
                     bail!(WalError::InvalidParameter);
                 }
-                Ok(v) => {
-                    ret.push(v);
+                Ok(mut v) => {
+                    ret.append(&mut v);
                 }
             }
 
@@ -104,14 +137,15 @@ impl WalManager {
         Ok(ret)
     }
 
-    pub fn first_index(&self) -> u64 {
+    fn first_index(&self) -> u64 {
         self.wal_files.first().unwrap().first_version()
     }
-    pub fn last_index(&self) -> u64 {
+
+    fn last_index(&self) -> u64 {
         self.wal_files.last().unwrap().last_version()
     }
 
-    pub async fn append(&mut self, ents: Vec<Vec<u8>>) -> Result<()> {
+    async fn append(&mut self, ents: Vec<Entry>) -> Result<()> {
         if self.wal_files.last().unwrap().is_sealed() {
             let path = self.generate_new_wal_file_path();
             let new_wal_file = wal_file::WalFile::create_new_wal_file(path).await.unwrap();
@@ -123,24 +157,15 @@ impl WalManager {
             self.wal_files
                 .last_mut()
                 .unwrap()
-                .append_entry(&vec![], &vec![], 0)
-                .await;
+                .append_entry(ent.clone())
+                .await
+                .unwrap();
         }
 
         Ok(())
     }
 
-    fn generate_new_wal_file_path(&self) -> PathBuf {
-        if self.wal_files.len() == 0 {
-            return "wal.0".to_owned().into();
-        }
-
-        let suffix = self.wal_files.last().unwrap().suffix();
-
-        format!("wal.{}", suffix).to_owned().into()
-    }
-
-    pub async fn compact(&mut self, compact_index: u64) -> Result<()> {
+    async fn compact(&mut self, compact_index: u64) -> Result<()> {
         if self.wal_files.first().unwrap().first_version() >= compact_index {
             return Ok(());
         }
@@ -150,7 +175,7 @@ impl WalManager {
                 let path = self.wal_files.first().unwrap().path.clone();
                 self.wal_files.drain(0..0);
 
-                std::fs::remove_file(path);
+                std::fs::remove_file(path).unwrap();
             }
         }
 

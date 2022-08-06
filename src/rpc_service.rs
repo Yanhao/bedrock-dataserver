@@ -24,6 +24,7 @@ use dataserver::service_pb::{
 use crate::param_check;
 use crate::shard::SnapShoter;
 use crate::shard::{self, Fsm, ReplicateLog, SHARD_MANAGER};
+use crate::wal::WalManager;
 
 #[derive(Debug, Default)]
 pub struct RealDataServer {}
@@ -42,7 +43,7 @@ impl DataService for RealDataServer {
 
         let shard_id = req.get_ref().shard_id;
 
-        let fsm = match SHARD_MANAGER.read().await.get_shard_fsm(shard_id).await {
+        let fsm = match SHARD_MANAGER.write().await.load_shard_fsm(shard_id).await {
             Err(_) => {
                 return Err(Status::not_found("no such shard"));
             }
@@ -73,7 +74,7 @@ impl DataService for RealDataServer {
         debug!("shard write: value len: {}", req.get_ref().value.len());
 
         let shard_id = req.get_ref().shard_id;
-        let fsm = match SHARD_MANAGER.write().await.get_shard_fsm(shard_id).await {
+        let fsm = match SHARD_MANAGER.write().await.load_shard_fsm(shard_id).await {
             Err(_) => {
                 return Err(Status::not_found("no such shard"));
             }
@@ -120,29 +121,18 @@ impl DataService for RealDataServer {
         }
 
         let shard_id = req.get_ref().shard_id;
-        let new_shard = shard::Shard {
-            shard_id,
-            is_leader: false,
-            storage_id: req.get_ref().storage_id,
-            create_ts: req.get_ref().create_ts.to_owned().unwrap().into(),
-            leader: if req.get_ref().leader == "" {
-                None
-            } else {
-                Some(req.get_ref().leader.parse().unwrap())
-            },
-            leader_change_ts: req.get_ref().leader_change_ts.to_owned().unwrap().into(),
-            replicates_update_ts: req.get_ref().replica_update_ts.to_owned().unwrap().into(),
-            replicates,
 
-            kv_data: RwLock::new(HashMap::new()),
-        };
+
+        let new_shard = shard::Shard::create_shard(&req).await;
 
         if let Err(e) = SHARD_MANAGER
             .write()
             .await
             .create_shard_fsm(Fsm::new(
                 new_shard,
-                Arc::new(RwLock::new(ReplicateLog::new())),
+                Arc::new(RwLock::new(
+                    WalManager::load_wal_by_shard_id(shard_id).await.unwrap(),
+                )),
             ))
             .await
         {
@@ -212,7 +202,7 @@ impl DataService for RealDataServer {
             req.get_ref().leader_change_ts.to_owned().unwrap().into();
 
         let shard = fsm.read().await.shard.clone();
-        if shard.read().await.leader_change_ts > leader_change_leader_ts {
+        if shard.read().await.get_leader_change_ts() > leader_change_leader_ts {
             let resp = Response::new(ShardAppendLogResponse {
                 is_old_leader: true,
                 last_applied_index: 0,
