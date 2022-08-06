@@ -1,5 +1,5 @@
 use anyhow::Result;
-use tonic::async_trait;
+use async_trait::async_trait;
 
 #[async_trait]
 pub trait SnapShoter {

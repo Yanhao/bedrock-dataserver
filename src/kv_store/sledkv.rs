@@ -1,9 +1,11 @@
+use std::iter::Iterator;
 use std::path::PathBuf;
 
 use anyhow::{bail, Result};
+use async_trait::async_trait;
 use sled;
 
-use crate::config::CONFIG;
+use crate::{config::CONFIG, shard::SnapShoter};
 
 pub struct SledStore {
     db: sled::Db,
@@ -59,6 +61,48 @@ impl SledStore {
 
     pub async fn kv_set(&mut self, key: &[u8], value: &[u8]) -> Result<()> {
         self.db.insert(key, value);
+        Ok(())
+    }
+}
+
+pub struct StoreIter {
+    iter: sled::Iter,
+}
+
+impl Iterator for StoreIter {
+    type Item = (Vec<u8>, Vec<u8>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.iter.next() {
+            None => None,
+            Some(v) => {
+                let v = v.unwrap();
+                let key = v.0;
+                let value = v.1;
+
+                Some((key.as_ref().to_owned(), value.as_ref().to_owned()))
+            }
+        }
+    }
+}
+
+impl SledStore {
+    pub async fn create_snapshot_iter(&self) -> Result<impl Iterator<Item = (Vec<u8>, Vec<u8>)>> {
+        Ok(StoreIter {
+            iter: self.db.iter(),
+        })
+    }
+
+    pub async fn install_snapshot(&mut self, piece: &[u8]) -> Result<()> {
+        let piece = piece.to_owned();
+        let mut ps = piece.split(|b| *b == '\n' as u8);
+
+        let key = ps.next().unwrap().to_owned();
+        let value = ps.next().unwrap().to_owned();
+        assert!(ps.next().is_none());
+
+        self.kv_set(&key, &value).await.unwrap();
+
         Ok(())
     }
 }

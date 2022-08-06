@@ -4,10 +4,10 @@ use std::vec::Vec;
 use std::{collections::HashMap, net::SocketAddr};
 
 use anyhow::{bail, Result};
+use async_trait::async_trait;
 use log::info;
 use prost::Message;
 use tokio::sync::RwLock;
-use tonic::async_trait;
 use tonic::Request;
 
 use crate::kv_store;
@@ -152,6 +152,11 @@ impl Shard {
 
     pub fn get_leader_change_ts(&self) -> time::SystemTime {
         todo!()
+    }
+
+    pub async fn kv_install_snapshot(&mut self, piece: &[u8]) -> Result<()> {
+        self.kv_store.write().await.install_snapshot(piece).await.unwrap();
+        Ok(())
     }
 }
 

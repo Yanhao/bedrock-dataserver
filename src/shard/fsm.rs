@@ -124,11 +124,20 @@ impl Fsm {
 
                             let entries_res =  rep_log.write().await.entries(last_applied_index, en.entry.index, 1024).await;
                             if let Err(_) = entries_res {
-                                let snap = shard.read().await.create_snapshot().await.unwrap();
+                                // let snap = shard.read().await.create_snapshot().await.unwrap();
+                                let snap = shard.read().await.kv_store.read().await.create_snapshot_iter().await.unwrap();
 
                                 let mut req_stream = vec![];
-                                for i in snap.iter() {
-                                    req_stream.push(ShardInstallSnapshotRequest{shard_id, data_piece: i.to_vec()})
+                                for kv in snap.into_iter() {
+                                    let mut key = kv.0.to_owned();
+                                    let mut value = kv.1.to_owned();
+
+                                    let mut item = vec![];
+                                    item.append(&mut key);
+                                    item.append(&mut vec!['\n' as u8]);
+                                    item.append(&mut value);
+
+                                    req_stream.push(ShardInstallSnapshotRequest{shard_id, data_piece: item})
                                 }
 
                                 client.unwrap().write().await.shard_install_snapshot(Request::new(stream::iter(req_stream))).await.unwrap();

@@ -280,7 +280,7 @@ impl DataService for RealDataServer {
                 .shard
                 .write()
                 .await
-                .install_snapshot(&piece.data_piece)
+                .kv_install_snapshot(&piece.data_piece)
                 .await
                 .unwrap();
         }
