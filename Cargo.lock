@@ -248,6 +248,7 @@ dependencies = [
  "protobuf",
  "raft",
  "regex",
+ "scopeguard",
  "serde",
  "serde_json",
  "sled",

@@ -34,6 +34,8 @@ impl ShardManager {
             )),
         )));
 
+        fsm.write().await.start().await.unwrap();
+
         self.shards.write().await.insert(shard_id, fsm.clone());
 
         Ok(fsm)

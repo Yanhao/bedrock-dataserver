@@ -1,4 +1,4 @@
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -29,8 +29,12 @@ pub struct Fsm {
     rep_log: Arc<RwLock<WalManager>>,
     next_index: AtomicU64,
     order_keeper: OrderKeeper,
-    stop_ch: Mutex<Option<mpsc::Sender<()>>>,
     input: Mutex<Option<mpsc::Sender<EntryWithNotifierSender>>>,
+
+    deleting: AtomicBool,
+    instaling_snapshot: AtomicBool,
+
+    stop_ch: Mutex<Option<mpsc::Sender<()>>>,
 }
 
 pub struct EntryWithNotifierSender {
@@ -57,8 +61,12 @@ impl Fsm {
             rep_log,
             next_index: 0.into(),
             order_keeper: OrderKeeper::new(),
-            stop_ch: Mutex::new(None),
             input: Mutex::new(None),
+
+            deleting: false.into(),
+            instaling_snapshot: false.into(),
+
+            stop_ch: Mutex::new(None),
         }
     }
 
@@ -137,7 +145,7 @@ impl Fsm {
                                     item.append(&mut vec!['\n' as u8]);
                                     item.append(&mut value);
 
-                                    req_stream.push(ShardInstallSnapshotRequest{shard_id, data_piece: item})
+                                    req_stream.push(ShardInstallSnapshotRequest{shard_id, data_piece: item, last_wal_index: shard.read().await.shard_meta.last_wal_index})
                                 }
 
                                 client.unwrap().write().await.shard_install_snapshot(Request::new(stream::iter(req_stream))).await.unwrap();
@@ -200,12 +208,11 @@ impl Fsm {
         &mut self,
         entry: Entry,
         generate_index: bool,
+        leader_write: bool,
     ) -> Result<EntryWithNotifierReceiver> {
         let mut entry = entry.clone();
         if generate_index {
-            entry.index = self
-                .next_index
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            entry.index = self.next_index.fetch_add(1, Ordering::Relaxed);
         }
 
         let (tx, rx) = mpsc::channel(3);
@@ -220,24 +227,36 @@ impl Fsm {
             .await
             .unwrap();
 
-        self.input
-            .lock()
-            .await
-            .as_ref()
-            .unwrap()
-            .send(EntryWithNotifierSender {
-                entry: entry.clone(),
-                sender: tx,
-            })
-            .await;
+        if leader_write {
+            self.input
+                .lock()
+                .await
+                .as_ref()
+                .unwrap()
+                .send(EntryWithNotifierSender {
+                    entry: entry.clone(),
+                    sender: tx,
+                })
+                .await;
+        }
 
         self.order_keeper.pass_order(entry.index).await;
 
         if entry.op == "put" {
+            // self.shard
+            //     .write()
+            //     .await
+            //     .put(entry.key.as_slice(), entry.value.as_slice())
+            //     .await
+            //     .unwrap();
+
             self.shard
                 .write()
                 .await
-                .put(entry.key.as_slice(), entry.value.as_slice())
+                .kv_store
+                .write()
+                .await
+                .kv_set(&entry.key, &entry.value)
                 .await
                 .unwrap();
         }
@@ -254,5 +273,29 @@ impl Fsm {
 
     pub async fn get(&self, key: &[u8]) -> Result<Vec<u8>> {
         self.shard.read().await.get(key).await
+    }
+
+    pub fn mark_deleting(&self) {
+        self.deleting.store(true, Ordering::Relaxed);
+    }
+
+    pub fn is_deleting(&self) -> bool {
+        self.deleting.load(Ordering::Relaxed)
+    }
+
+    pub fn set_instaling_snapshot(&self, t: bool) {
+        self.instaling_snapshot.store(t, Ordering::Relaxed);
+    }
+
+    pub fn is_instaling_snapshot(&self) -> bool {
+        self.instaling_snapshot.load(Ordering::Relaxed)
+    }
+
+    pub async fn is_leader(&self) -> bool {
+        self.shard.read().await.is_leader()
+    }
+
+    pub fn reset_replog(&mut self, last_index: u64) -> Result<()> {
+        todo!()
     }
 }

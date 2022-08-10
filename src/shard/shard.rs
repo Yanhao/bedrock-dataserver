@@ -54,6 +54,7 @@ impl Shard {
             replicates_update_ts: req.get_ref().replica_update_ts.to_owned().unwrap().into(),
 
             replicates: req.get_ref().replicates.clone(),
+            last_wal_index: 0,
         };
 
         let mut meta_buf = Vec::new();
@@ -121,7 +122,7 @@ impl Shard {
         Ok(value.to_vec())
     }
 
-    pub async fn clear(&self) {
+    pub async fn clear_data(&self) {
         *self.kv_data.write().await = HashMap::new();
     }
 
@@ -143,6 +144,10 @@ impl Shard {
     pub fn set_is_leader(&mut self, l: bool) {
         todo!()
         // self.is_leader = l
+    }
+
+    pub fn is_leader(&self) -> bool {
+        todo!()
     }
 
     pub fn update_leader_change_ts(&mut self, t: time::SystemTime) {

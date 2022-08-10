@@ -50,8 +50,16 @@ impl DataService for RealDataServer {
             Ok(s) => s,
         };
 
-        let a = fsm.read().await;
-        let value = match a.get(req.get_ref().key.as_slice()).await {
+        if fsm.read().await.is_deleting() {
+            return Err(Status::not_found("shard is deleted"));
+        }
+
+        if fsm.read().await.is_instaling_snapshot() {
+            return Err(Status::not_found("shard is repairing"));
+        }
+
+        let fsm_ = fsm.read().await;
+        let value = match fsm_.get(req.get_ref().key.as_slice()).await {
             Err(_) => return Err(Status::not_found("no such key")),
             Ok(v) => v,
         };
@@ -81,6 +89,14 @@ impl DataService for RealDataServer {
             Ok(s) => s,
         };
 
+        if fsm.read().await.is_deleting() {
+            return Err(Status::not_found("shard is deleted"));
+        }
+
+        if fsm.read().await.is_leader().await {
+            return Err(Status::unavailable("not leader"));
+        }
+
         let mut entry_notifier = fsm
             .write()
             .await
@@ -91,6 +107,7 @@ impl DataService for RealDataServer {
                     key: req.get_ref().key.clone(),
                     value: req.get_ref().value.clone(),
                 },
+                true,
                 true,
             )
             .await
@@ -122,7 +139,6 @@ impl DataService for RealDataServer {
 
         let shard_id = req.get_ref().shard_id;
 
-
         let new_shard = shard::Shard::create_shard(&req).await;
 
         if let Err(e) = SHARD_MANAGER
@@ -141,7 +157,7 @@ impl DataService for RealDataServer {
         }
 
         let fsm = SHARD_MANAGER
-            .write()
+            .read()
             .await
             .get_shard_fsm(shard_id)
             .await
@@ -150,6 +166,7 @@ impl DataService for RealDataServer {
         fsm.write().await.start().await.unwrap();
 
         info!("create shard successfully, req: {:?}", req);
+
         Ok(Response::new(resp))
     }
 
@@ -163,11 +180,13 @@ impl DataService for RealDataServer {
         let shard_id = req.get_ref().shard_id;
 
         let fsm = SHARD_MANAGER
-            .write()
+            .read()
             .await
             .get_shard_fsm(shard_id)
             .await
             .unwrap();
+
+        fsm.read().await.mark_deleting();
 
         fsm.write().await.stop().await;
 
@@ -226,6 +245,7 @@ impl DataService for RealDataServer {
                         value: e.value.clone(),
                     },
                     false,
+                    false,
                 )
                 .await
                 .unwrap();
@@ -248,7 +268,17 @@ impl DataService for RealDataServer {
         info!("shard install snapshot");
 
         let mut in_stream = req.into_inner();
-        let mut first_piece = true;
+        let first_piece = in_stream.next().await.unwrap().unwrap();
+        let last_wal_index = first_piece.last_wal_index;
+
+        let fsm = SHARD_MANAGER
+            .read()
+            .await
+            .get_shard_fsm(first_piece.shard_id)
+            .await
+            .unwrap();
+
+        fsm.write().await.set_instaling_snapshot(true);
 
         while let Some(result) = in_stream.next().await {
             if let Err(_) = result {
@@ -257,25 +287,13 @@ impl DataService for RealDataServer {
             let piece = result.unwrap();
 
             if !param_check::shard_install_snapshot_param_check(&piece) {
+                fsm.write().await.set_instaling_snapshot(false);
                 return Err(Status::invalid_argument(""));
             }
 
-            let shard_id = piece.shard_id;
+            fsm.write().await.shard.write().await.clear_data().await;
 
-            let fsm = SHARD_MANAGER
-                .read()
-                .await
-                .get_shard_fsm(shard_id)
-                .await
-                .unwrap();
-
-            if first_piece {
-                fsm.as_ref().write().await.shard.write().await.clear().await;
-                first_piece = false;
-            }
-
-            fsm.as_ref()
-                .write()
+            fsm.write()
                 .await
                 .shard
                 .write()
@@ -284,6 +302,9 @@ impl DataService for RealDataServer {
                 .await
                 .unwrap();
         }
+
+        fsm.write().await.reset_replog(last_wal_index).unwrap();
+        fsm.write().await.set_instaling_snapshot(false);
 
         Ok(Response::new(ShardInstallSnapshotResponse {}))
     }
@@ -303,7 +324,7 @@ impl DataService for RealDataServer {
             Err(_) => {
                 return Err(Status::not_found("no such shard"));
             }
-            Ok(s) => s,
+            Ok(v) => v,
         };
 
         let mut socks = Vec::<SocketAddr>::new();
@@ -312,9 +333,13 @@ impl DataService for RealDataServer {
             socks.push(addr);
         }
 
-        let shard = fsm.write().await.shard.clone();
+        let shard = fsm.read().await.shard.clone();
         shard.write().await.set_replicates(&socks).unwrap();
         shard.write().await.set_is_leader(true);
+        shard
+            .write()
+            .await
+            .update_leader_change_ts(req.get_ref().leader_change_ts.to_owned().unwrap().into());
 
         Ok(Response::new(TransferShardLeaderResponse {}))
     }
