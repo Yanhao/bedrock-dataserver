@@ -139,16 +139,9 @@ impl Fsm {
             .unwrap();
     }
 
-    pub async fn apply(
-        &mut self,
-        entry: Entry,
-        generate_index: bool,
-        leader_write: bool,
-    ) -> Result<EntryWithNotifierReceiver> {
+    pub async fn process_wirte(&mut self, entry: Entry) -> Result<EntryWithNotifierReceiver> {
         let mut entry = entry.clone();
-        if generate_index {
-            entry.index = self.next_index.fetch_add(1, Ordering::Relaxed);
-        }
+        entry.index = self.next_index.fetch_add(1, Ordering::Relaxed);
 
         let (tx, rx) = mpsc::channel(3);
 
@@ -162,18 +155,16 @@ impl Fsm {
             .await
             .unwrap();
 
-        if leader_write {
-            self.input
-                .lock()
-                .await
-                .as_ref()
-                .unwrap()
-                .send(EntryWithNotifierSender {
-                    entry: entry.clone(),
-                    sender: tx,
-                })
-                .await;
-        }
+        self.input
+            .lock()
+            .await
+            .as_ref()
+            .unwrap()
+            .send(EntryWithNotifierSender {
+                entry: entry.clone(),
+                sender: tx,
+            })
+            .await;
 
         self.order_keeper.pass_order(entry.index).await;
 
@@ -193,6 +184,34 @@ impl Fsm {
             entry,
             receiver: rx,
         })
+    }
+
+    pub async fn apply_entry(&mut self, entry: Entry) -> Result<()> {
+        self.order_keeper.ensure_order(entry.index).await.unwrap();
+
+        // TODO: use group commit to improve performance
+        self.rep_log
+            .write()
+            .await
+            .append(vec![entry.clone()])
+            .await
+            .unwrap();
+
+        self.order_keeper.pass_order(entry.index).await;
+
+        if entry.op == "put" {
+            self.shard
+                .write()
+                .await
+                .kv_store
+                .write()
+                .await
+                .kv_set(&entry.key, &entry.value)
+                .await
+                .unwrap();
+        }
+
+        Ok(())
     }
 
     pub fn get_shard(&self) -> Arc<RwLock<Shard>> {

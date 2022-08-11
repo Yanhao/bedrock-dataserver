@@ -98,16 +98,12 @@ impl DataService for RealDataServer {
         let mut entry_notifier = fsm
             .write()
             .await
-            .apply(
-                Entry {
-                    index: 0,
-                    op: "put".into(),
-                    key: req.get_ref().key.clone(),
-                    value: req.get_ref().value.clone(),
-                },
-                true,
-                true,
-            )
+            .process_wirte(Entry {
+                index: 0,
+                op: "put".into(),
+                key: req.get_ref().key.clone(),
+                value: req.get_ref().value.clone(),
+            })
             .await
             .unwrap();
 
@@ -235,16 +231,12 @@ impl DataService for RealDataServer {
         for e in req.get_ref().entries.iter() {
             fsm.write()
                 .await
-                .apply(
-                    replog_pb::Entry {
-                        op: e.op.clone(),
-                        index: e.index,
-                        key: e.key.clone(),
-                        value: e.value.clone(),
-                    },
-                    false,
-                    false,
-                )
+                .apply_entry(replog_pb::Entry {
+                    op: e.op.clone(),
+                    index: e.index,
+                    key: e.key.clone(),
+                    value: e.value.clone(),
+                })
                 .await
                 .unwrap();
         }

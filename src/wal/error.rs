@@ -28,4 +28,7 @@ pub enum WalError {
 
     #[error("emtry wal files")]
     EmptyWalFiles,
+
+    #[error("to many entries")]
+    TooManyEntries,
 }

@@ -2,7 +2,6 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, Result};
 use async_trait::async_trait;
-use chrono::format::format;
 
 use crate::config::CONFIG;
 
@@ -10,6 +9,8 @@ use super::error::WalError;
 use super::{wal_file, WalTrait};
 
 use dataserver::replog_pb::Entry;
+
+const MAX_ENTRY_COUNT: u64 = 100;
 
 pub struct WalManager {
     wal_files: Vec<wal_file::WalFile>,
@@ -75,6 +76,10 @@ impl WalManager {
 #[async_trait]
 impl WalTrait for WalManager {
     async fn entries(&mut self, mut lo: u64, hi: u64, max_size: u64) -> Result<Vec<Entry>> {
+        if hi - lo >= MAX_ENTRY_COUNT {
+            bail!(WalError::TooManyEntries);
+        }
+
         if self.wal_files.len() == 0 {
             bail!(WalError::EmptyWalFiles);
         }
