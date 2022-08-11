@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time;
@@ -22,8 +21,7 @@ use dataserver::service_pb::{
 };
 
 use crate::param_check;
-use crate::shard::SnapShoter;
-use crate::shard::{self, Fsm, ReplicateLog, SHARD_MANAGER};
+use crate::shard::{self, Fsm, SHARD_MANAGER};
 use crate::wal::WalManager;
 
 #[derive(Debug, Default)]
@@ -42,7 +40,6 @@ impl DataService for RealDataServer {
         info!("shard read, req: {:?}", req);
 
         let shard_id = req.get_ref().shard_id;
-
         let fsm = match SHARD_MANAGER.write().await.load_shard_fsm(shard_id).await {
             Err(_) => {
                 return Err(Status::not_found("no such shard"));
@@ -58,8 +55,9 @@ impl DataService for RealDataServer {
             return Err(Status::not_found("shard is repairing"));
         }
 
-        let fsm_ = fsm.read().await;
-        let value = match fsm_.get(req.get_ref().key.as_slice()).await {
+        let shard = fsm.read().await.get_shard();
+
+        let value = match shard.read().await.get(req.get_ref().key.as_slice()).await {
             Err(_) => return Err(Status::not_found("no such key")),
             Ok(v) => v,
         };
@@ -220,7 +218,7 @@ impl DataService for RealDataServer {
         let leader_change_leader_ts: time::SystemTime =
             req.get_ref().leader_change_ts.to_owned().unwrap().into();
 
-        let shard = fsm.read().await.shard.clone();
+        let shard = fsm.read().await.get_shard();
         if shard.read().await.get_leader_change_ts() > leader_change_leader_ts {
             let resp = Response::new(ShardAppendLogResponse {
                 is_old_leader: true,
@@ -277,6 +275,7 @@ impl DataService for RealDataServer {
             .get_shard_fsm(first_piece.shard_id)
             .await
             .unwrap();
+        let shard = fsm.read().await.get_shard();
 
         fsm.write().await.set_instaling_snapshot(true);
 
@@ -291,11 +290,8 @@ impl DataService for RealDataServer {
                 return Err(Status::invalid_argument(""));
             }
 
-            fsm.write().await.shard.write().await.clear_data().await;
-
-            fsm.write()
-                .await
-                .shard
+            shard.write().await.clear_data().await;
+            shard
                 .write()
                 .await
                 .kv_install_snapshot(&piece.data_piece)
@@ -333,7 +329,7 @@ impl DataService for RealDataServer {
             socks.push(addr);
         }
 
-        let shard = fsm.read().await.shard.clone();
+        let shard = fsm.read().await.get_shard();
         shard.write().await.set_replicates(&socks).unwrap();
         shard.write().await.set_is_leader(true);
         shard

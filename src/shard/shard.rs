@@ -20,7 +20,6 @@ use dataserver::service_pb::ShardMeta;
 const SHART_META_KEY: &'static str = "shard_meta";
 
 pub struct Shard {
-    pub kv_data: RwLock<HashMap<Vec<u8>, Vec<u8>>>,
     pub kv_store: RwLock<kv_store::SledStore>,
     pub shard_meta: ShardMeta,
 }
@@ -34,7 +33,6 @@ impl Shard {
         let meta = ShardMeta::decode(&*raw_meta).unwrap();
 
         Self {
-            kv_data: RwLock::new(HashMap::new()),
             kv_store: RwLock::new(sled_kv),
             shard_meta: meta,
         }
@@ -65,7 +63,6 @@ impl Shard {
             .unwrap();
 
         let new_shard = Self {
-            kv_data: RwLock::new(HashMap::new()),
             kv_store: RwLock::new(sled_kv),
             shard_meta: meta,
         };
@@ -75,8 +72,6 @@ impl Shard {
 
     fn new(shard_id: u64, storage_id: u64, kv_store: kv_store::SledStore, meta: ShardMeta) -> Self {
         return Shard {
-            kv_data: RwLock::new(HashMap::new()),
-
             kv_store: RwLock::new(kv_store),
 
             shard_meta: meta,
@@ -97,7 +92,12 @@ impl Shard {
 
         // self.kv_data.write().await.insert(key, value);
 
-        self.kv_store.write().await.kv_set(key, value).await;
+        self.kv_store
+            .write()
+            .await
+            .kv_set(key, value)
+            .await
+            .unwrap();
 
         Ok(())
     }
@@ -123,7 +123,7 @@ impl Shard {
     }
 
     pub async fn clear_data(&self) {
-        *self.kv_data.write().await = HashMap::new();
+        todo!()
     }
 
     pub fn get_shard_id(&self) -> u64 {
@@ -160,32 +160,6 @@ impl Shard {
     }
 
     pub async fn kv_install_snapshot(&mut self, piece: &[u8]) -> Result<()> {
-        self.kv_store.write().await.install_snapshot(piece).await.unwrap();
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl SnapShoter for Shard {
-    async fn create_snapshot(&self) -> Result<Vec<Vec<u8>>> {
-        let mut ret: Vec<Vec<u8>> = Default::default();
-
-        for kv in self.kv_data.read().await.iter() {
-            let mut key = kv.0.to_owned();
-            let mut value = kv.1.to_owned();
-
-            let mut item = vec![];
-            item.append(&mut key);
-            item.append(&mut vec!['\n' as u8]);
-            item.append(&mut value);
-
-            ret.push(item);
-        }
-
-        Ok(ret)
-    }
-
-    async fn install_snapshot(&mut self, piece: &[u8]) -> Result<()> {
         let piece = piece.to_owned();
         let mut ps = piece.split(|b| *b == '\n' as u8);
 
@@ -193,8 +167,47 @@ impl SnapShoter for Shard {
         let value = ps.next().unwrap().to_owned();
         assert!(ps.next().is_none());
 
-        self.kv_data.write().await.insert(key, value);
+        self.kv_store
+            .write()
+            .await
+            .kv_set(&key, &value)
+            .await
+            .unwrap();
 
         Ok(())
     }
 }
+
+// #[async_trait]
+// impl SnapShoter for Shard {
+//     async fn create_snapshot(&self) -> Result<Vec<Vec<u8>>> {
+//         let mut ret: Vec<Vec<u8>> = Default::default();
+
+//         for kv in self.kv_data.read().await.iter() {
+//             let mut key = kv.0.to_owned();
+//             let mut value = kv.1.to_owned();
+
+//             let mut item = vec![];
+//             item.append(&mut key);
+//             item.append(&mut vec!['\n' as u8]);
+//             item.append(&mut value);
+
+//             ret.push(item);
+//         }
+
+//         Ok(ret)
+//     }
+
+//     async fn install_snapshot(&mut self, piece: &[u8]) -> Result<()> {
+//         let piece = piece.to_owned();
+//         let mut ps = piece.split(|b| *b == '\n' as u8);
+
+//         let key = ps.next().unwrap().to_owned();
+//         let value = ps.next().unwrap().to_owned();
+//         assert!(ps.next().is_none());
+
+//         self.kv_store.write().await.insert(key, value);
+
+//         Ok(())
+//     }
+// }

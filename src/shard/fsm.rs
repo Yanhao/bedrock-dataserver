@@ -9,14 +9,13 @@ use tonic::Request;
 
 use dataserver::replog_pb::Entry;
 use dataserver::service_pb::{
-    shard_append_log_request, ShardAppendLogRequest, ShardInstallSnapshotRequest,
+    data_service_client, shard_append_log_request, ShardAppendLogRequest,
+    ShardInstallSnapshotRequest,
 };
 
 use crate::connections::CONNECTIONS;
 use crate::shard::error::ShardError;
 use crate::shard::order_keeper::OrderKeeper;
-use crate::shard::replicate_log::ReplicateLog;
-use crate::shard::snapshoter::SnapShoter;
 use crate::shard::Shard;
 use crate::wal::WalManager;
 use crate::wal::WalTrait;
@@ -24,8 +23,7 @@ use crate::wal::WalTrait;
 const INPUT_CHANNEL_LEN: usize = 10240;
 
 pub struct Fsm {
-    pub shard: Arc<RwLock<Shard>>,
-    // rep_log: Arc<RwLock<ReplicateLog>>,
+    shard: Arc<RwLock<Shard>>,
     rep_log: Arc<RwLock<WalManager>>,
     next_index: AtomicU64,
     order_keeper: OrderKeeper,
@@ -77,12 +75,12 @@ impl Fsm {
         let (input_tx, mut input_rx) = mpsc::channel(INPUT_CHANNEL_LEN);
         *self.input.lock().await = Some(input_tx);
 
-        let replicates = self.shard.read().await.get_replicates();
-        let shard_id = self.shard.read().await.get_shard_id();
         let rep_log = self.rep_log.clone();
         let shard = self.shard.clone();
 
         tokio::spawn(async move {
+            let shard_id = shard.read().await.get_shard_id();
+
             info!("start append entry task for shard: {}", shard_id);
 
             'outer: loop {
@@ -91,98 +89,35 @@ impl Fsm {
                         break;
                     }
                     e = input_rx.recv() => {
+                        let mut success_replicate_count = 0;
                         let en = e.unwrap();
 
+                        let replicates = shard.read().await.get_replicates();
                         'inner: for addr in replicates.iter() {
-                            let addr_str = addr.to_string();
-
-                            let client = CONNECTIONS.write().await.get_conn(addr_str).await;
-
-                            let request = Request::new(ShardAppendLogRequest {
-                                shard_id,
-                                leader_change_ts: Some(shard.read().await.get_leader_change_ts().into()),
-                                entries: vec![
-                                    shard_append_log_request::Entry {
-                                        op: en.entry.op.clone(),
-                                        index: en.entry.index,
-                                        key: en.entry.key.clone(),
-                                        value: en.entry.value.clone(),
-                                    }
-                                ],
-                            });
-
-                            let resp = match client.as_ref().unwrap().write().await.shard_append_log(request).await {
-                                Err(e) => {
-                                    warn!("failed to  append_log, err {}", e);
-                                    continue 'inner;
-
+                            match Self::append_log_entry_to(shard.clone(), addr.to_string(), en.entry.clone(), rep_log.clone()).await {
+                                Err(ShardError::NotLeader) => {
+                                    shard.write().await.set_is_leader(false);
+                                    en.sender.send(Err(ShardError::NotLeader)).await.unwrap();
+                                    continue 'outer;
                                 },
-                                Ok(v) => v,
-                            };
-                            if resp.get_ref().is_old_leader {
-                                en.sender.send(Err(ShardError::NotLeader)).await.unwrap();
-                                continue 'outer;
-                            }
-
-
-                            let last_applied_index = resp.get_ref().last_applied_index;
-                            if last_applied_index >= en.entry.index {
-                                continue 'inner;
-                            }
-
-                            let entries_res =  rep_log.write().await.entries(last_applied_index, en.entry.index, 1024).await;
-                            if let Err(_) = entries_res {
-                                // let snap = shard.read().await.create_snapshot().await.unwrap();
-                                let snap = shard.read().await.kv_store.read().await.create_snapshot_iter().await.unwrap();
-
-                                let mut req_stream = vec![];
-                                for kv in snap.into_iter() {
-                                    let mut key = kv.0.to_owned();
-                                    let mut value = kv.1.to_owned();
-
-                                    let mut item = vec![];
-                                    item.append(&mut key);
-                                    item.append(&mut vec!['\n' as u8]);
-                                    item.append(&mut value);
-
-                                    req_stream.push(ShardInstallSnapshotRequest{shard_id, data_piece: item, last_wal_index: shard.read().await.shard_meta.last_wal_index})
+                                Err(ShardError::FailedToAppendLog) => {
+                                    continue 'inner;
+                                },
+                                Ok(_) => {
+                                    success_replicate_count +=1;
+                                    continue 'inner;
                                 }
-
-                                client.unwrap().write().await.shard_install_snapshot(Request::new(stream::iter(req_stream))).await.unwrap();
-                                // ref: https://github.com/hyperium/tonic/blob/master/examples/routeguide-tutorial.md
-
-                                continue 'inner;
-                            }
-
-                            let ents = entries_res.unwrap();
-
-                            let request = Request::new(ShardAppendLogRequest {
-                                shard_id,
-                                leader_change_ts: Some(shard.read().await.get_leader_change_ts().into()),
-                                entries: ents.iter().map(|ent| {
-                                    shard_append_log_request::Entry {
-                                        op: ent.op.clone(),
-                                        index: ent.index,
-                                        key: ent.key.clone(),
-                                        value: ent.value.clone(),
-                                    }
-                                }).collect(),
-                            }) ;
-
-                            let resp = match client.unwrap().write().await.shard_append_log(request).await{
-                                Err(e) => {
-                                    warn!("failed to append_log, err: {}", e);
-                                    continue 'inner;
-                                },
-                                Ok(v) => v,
-                            };
-                            if resp.get_ref().is_old_leader {
-                                en.sender.send(Err(ShardError::NotLeader)).await.unwrap();
-                                continue 'outer;
+                                Err(_) =>{
+                                    panic!("should not happen");
+                                }
                             }
                         }
 
-                        en.sender.send(Ok(())).await.unwrap();
+                        if success_replicate_count > 1 {
+                            en.sender.send(Ok(())).await.unwrap();
+                        } else {
+                            en.sender.send(Err(ShardError::FailedToAppendLog)).await.unwrap();
+                        }
                     }
                 }
             }
@@ -243,13 +178,6 @@ impl Fsm {
         self.order_keeper.pass_order(entry.index).await;
 
         if entry.op == "put" {
-            // self.shard
-            //     .write()
-            //     .await
-            //     .put(entry.key.as_slice(), entry.value.as_slice())
-            //     .await
-            //     .unwrap();
-
             self.shard
                 .write()
                 .await
@@ -267,12 +195,16 @@ impl Fsm {
         })
     }
 
-    pub async fn last_index(&self) -> u64 {
-        self.rep_log.read().await.last_index()
+    pub fn get_shard(&self) -> Arc<RwLock<Shard>> {
+        self.shard.clone()
     }
 
-    pub async fn get(&self, key: &[u8]) -> Result<Vec<u8>> {
-        self.shard.read().await.get(key).await
+    pub async fn get_shard_id(&self) -> u64 {
+        self.shard.read().await.get_shard_id()
+    }
+
+    pub async fn last_index(&self) -> u64 {
+        self.rep_log.read().await.last_index()
     }
 
     pub fn mark_deleting(&self) {
@@ -297,5 +229,140 @@ impl Fsm {
 
     pub fn reset_replog(&mut self, last_index: u64) -> Result<()> {
         todo!()
+    }
+
+    async fn append_log_entry_to(
+        shard: Arc<RwLock<Shard>>,
+        addr: String,
+        en: Entry,
+        replog: Arc<RwLock<WalManager>>,
+    ) -> std::result::Result<(), ShardError> {
+        let shard_id = shard.read().await.get_shard_id();
+        let addr_str = addr.to_string();
+        let client = CONNECTIONS.write().await.get_conn(addr_str).await.unwrap();
+
+        let request = Request::new(ShardAppendLogRequest {
+            shard_id,
+            leader_change_ts: Some(shard.read().await.get_leader_change_ts().into()),
+            entries: vec![shard_append_log_request::Entry {
+                op: en.op.clone(),
+                index: en.index,
+                key: en.key.clone(),
+                value: en.value.clone(),
+            }],
+        });
+
+        let resp = match client.write().await.shard_append_log(request).await {
+            Err(e) => {
+                warn!("failed to  append_log, err {}", e);
+                return Err(ShardError::FailedToAppendLog);
+            }
+            Ok(v) => v,
+        };
+
+        if resp.get_ref().is_old_leader {
+            return Err(ShardError::NotLeader);
+        }
+
+        let mut last_applied_index = resp.get_ref().last_applied_index;
+        for i in 1..=3 {
+            if last_applied_index >= en.index {
+                return Ok(());
+            }
+
+            let entries_res = replog
+                .write()
+                .await
+                .entries(last_applied_index, en.index, 1024)
+                .await;
+
+            if let Err(_) = entries_res {
+                last_applied_index =
+                    match Self::install_snapshot_to(shard.clone(), client.clone()).await {
+                        Err(_) => {
+                            return Err(ShardError::FailedToAppendLog);
+                        }
+                        Ok(v) => v,
+                    };
+
+                continue;
+            }
+
+            let ents = entries_res.unwrap();
+
+            let request = Request::new(ShardAppendLogRequest {
+                shard_id,
+                leader_change_ts: Some(shard.read().await.get_leader_change_ts().into()),
+                entries: ents
+                    .iter()
+                    .map(|ent| shard_append_log_request::Entry {
+                        op: ent.op.clone(),
+                        index: ent.index,
+                        key: ent.key.clone(),
+                        value: ent.value.clone(),
+                    })
+                    .collect(),
+            });
+
+            let resp = match client.write().await.shard_append_log(request).await {
+                Err(e) => {
+                    warn!("failed to append_log, err: {}", e);
+                    return Err(ShardError::FailedToAppendLog);
+                }
+                Ok(v) => v,
+            };
+
+            if resp.get_ref().is_old_leader {
+                return Err(ShardError::NotLeader);
+            }
+        }
+
+        Err(ShardError::FailedToAppendLog)
+    }
+
+    async fn install_snapshot_to(
+        shard: Arc<RwLock<Shard>>,
+        client: Arc<RwLock<data_service_client::DataServiceClient<tonic::transport::Channel>>>,
+    ) -> Result<u64 /*last_wal_index */> {
+        let shard_id = shard.read().await.get_shard_id();
+
+        let snap = shard
+            .read()
+            .await
+            .kv_store
+            .read()
+            .await
+            .create_snapshot_iter()
+            .await
+            .unwrap();
+
+        let last_wal_index = shard.read().await.shard_meta.last_wal_index; // FIXME: keep atomic with above
+
+        let mut req_stream = vec![];
+        for kv in snap.into_iter() {
+            let mut key = kv.0.to_owned();
+            let mut value = kv.1.to_owned();
+
+            let mut item = vec![];
+            item.append(&mut key);
+            item.append(&mut vec!['\n' as u8]);
+            item.append(&mut value);
+
+            req_stream.push(ShardInstallSnapshotRequest {
+                shard_id,
+                data_piece: item,
+                last_wal_index,
+            })
+        }
+
+        client
+            .write()
+            .await
+            .shard_install_snapshot(Request::new(stream::iter(req_stream)))
+            .await
+            .unwrap();
+        // ref: https://github.com/hyperium/tonic/blob/master/examples/routeguide-tutorial.md
+
+        return Ok(last_wal_index);
     }
 }

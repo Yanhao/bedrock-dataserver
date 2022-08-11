@@ -26,4 +26,7 @@ pub enum ShardError {
 
     #[error("not leader")]
     NotLeader,
+
+    #[error("append log failed")]
+    FailedToAppendLog,
 }

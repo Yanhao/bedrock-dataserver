@@ -57,16 +57,12 @@ impl ShardManager {
     }
 
     pub async fn create_shard_fsm(&mut self, fsm: Fsm) -> Result<()> {
-        if self
-            .shards
-            .read()
-            .await
-            .contains_key(&(fsm.shard.read().await.get_shard_id()))
-        {
+        let shard_id = fsm.get_shard_id().await;
+
+        if self.shards.read().await.contains_key(&shard_id) {
             bail!(ShardError::ShardExists);
         }
 
-        let shard_id = fsm.shard.read().await.get_shard_id();
         self.shards
             .write()
             .await
