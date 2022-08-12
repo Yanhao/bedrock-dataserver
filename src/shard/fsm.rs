@@ -96,7 +96,7 @@ impl Fsm {
                         'inner: for addr in replicates.iter() {
                             match Self::append_log_entry_to(shard.clone(), addr.to_string(), en.entry.clone(), rep_log.clone()).await {
                                 Err(ShardError::NotLeader) => {
-                                    shard.write().await.set_is_leader(false);
+                                    shard.write().await.set_is_leader(false).await;
                                     en.sender.send(Err(ShardError::NotLeader)).await.unwrap();
                                     continue 'outer;
                                 },
@@ -172,10 +172,7 @@ impl Fsm {
             self.shard
                 .write()
                 .await
-                .kv_store
-                .write()
-                .await
-                .kv_set(&entry.key, &entry.value)
+                .put(&entry.key, &entry.value)
                 .await
                 .unwrap();
         }
@@ -203,10 +200,7 @@ impl Fsm {
             self.shard
                 .write()
                 .await
-                .kv_store
-                .write()
-                .await
-                .kv_set(&entry.key, &entry.value)
+                .put(&entry.key, &entry.value)
                 .await
                 .unwrap();
         }
@@ -345,17 +339,9 @@ impl Fsm {
     ) -> Result<u64 /*last_wal_index */> {
         let shard_id = shard.read().await.get_shard_id();
 
-        let snap = shard
-            .read()
-            .await
-            .kv_store
-            .read()
-            .await
-            .create_snapshot_iter()
-            .await
-            .unwrap();
+        let snap = shard.read().await.create_snapshot_iter().await.unwrap();
 
-        let last_wal_index = shard.read().await.shard_meta.last_wal_index; // FIXME: keep atomic with above
+        let last_wal_index = shard.read().await.get_last_wal_index(); // FIXME: keep atomic with above
 
         let mut req_stream = vec![];
         for kv in snap.into_iter() {

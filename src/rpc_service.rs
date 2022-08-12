@@ -226,7 +226,8 @@ impl DataService for RealDataServer {
         shard
             .write()
             .await
-            .update_leader_change_ts(leader_change_leader_ts);
+            .update_leader_change_ts(leader_change_leader_ts)
+            .await;
 
         for e in req.get_ref().entries.iter() {
             fsm.write()
@@ -322,12 +323,13 @@ impl DataService for RealDataServer {
         }
 
         let shard = fsm.read().await.get_shard();
-        shard.write().await.set_replicates(&socks).unwrap();
-        shard.write().await.set_is_leader(true);
+        shard.write().await.set_replicates(&socks).await.unwrap();
+        shard.write().await.set_is_leader(true).await;
         shard
             .write()
             .await
-            .update_leader_change_ts(req.get_ref().leader_change_ts.to_owned().unwrap().into());
+            .update_leader_change_ts(req.get_ref().leader_change_ts.to_owned().unwrap().into())
+            .await;
 
         Ok(Response::new(TransferShardLeaderResponse {}))
     }

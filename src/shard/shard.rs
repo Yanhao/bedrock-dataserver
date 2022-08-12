@@ -20,8 +20,9 @@ use dataserver::service_pb::ShardMeta;
 const SHART_META_KEY: &'static str = "shard_meta";
 
 pub struct Shard {
-    pub kv_store: RwLock<kv_store::SledStore>,
-    pub shard_meta: ShardMeta,
+    shard_id: u64,
+    kv_store: RwLock<kv_store::SledStore>,
+    shard_meta: ShardMeta,
 }
 
 impl Shard {
@@ -33,6 +34,7 @@ impl Shard {
         let meta = ShardMeta::decode(&*raw_meta).unwrap();
 
         Self {
+            shard_id,
             kv_store: RwLock::new(sled_kv),
             shard_meta: meta,
         }
@@ -63,6 +65,7 @@ impl Shard {
             .unwrap();
 
         let new_shard = Self {
+            shard_id: meta.shard_id,
             kv_store: RwLock::new(sled_kv),
             shard_meta: meta,
         };
@@ -72,10 +75,92 @@ impl Shard {
 
     fn new(shard_id: u64, storage_id: u64, kv_store: kv_store::SledStore, meta: ShardMeta) -> Self {
         return Shard {
+            shard_id,
             kv_store: RwLock::new(kv_store),
-
             shard_meta: meta,
         };
+    }
+
+    pub async fn clear_data(&self) {
+        todo!()
+    }
+
+    pub fn get_shard_id(&self) -> u64 {
+        self.shard_id
+    }
+
+    pub fn get_replicates(&self) -> Vec<SocketAddr> {
+        self.shard_meta
+            .replicates
+            .iter()
+            .map(|a| a.parse().unwrap())
+            .collect()
+    }
+
+    pub async fn set_replicates(&mut self, replicats: &[SocketAddr]) -> Result<()> {
+        self.shard_meta.replicates = replicats.iter().map(|s| s.to_string()).collect();
+        self.save_meta().await.unwrap();
+
+        Ok(())
+    }
+
+    pub async fn set_is_leader(&mut self, l: bool) {
+        self.shard_meta.is_leader = l;
+        self.save_meta().await.unwrap();
+    }
+
+    pub fn is_leader(&self) -> bool {
+        self.shard_meta.is_leader
+    }
+
+    pub async fn update_leader_change_ts(&mut self, t: time::SystemTime) {
+        self.shard_meta.leader_change_ts = Some(t.into());
+        self.save_meta().await.unwrap();
+    }
+
+    pub fn get_leader_change_ts(&self) -> time::SystemTime {
+        self.shard_meta.leader_change_ts.clone().unwrap().into()
+    }
+
+    pub fn get_last_wal_index(&self) -> u64 {
+        self.shard_meta.last_wal_index
+    }
+
+    pub async fn save_meta(&mut self) -> Result<()> {
+        let mut meta_buf = Vec::new();
+        self.shard_meta.encode(&mut meta_buf).unwrap();
+        self.kv_store
+            .write()
+            .await
+            .kv_set(SHART_META_KEY.as_bytes(), &meta_buf)
+            .await
+            .unwrap();
+
+        Ok(())
+    }
+
+    pub async fn create_snapshot_iter(&self) -> Result<impl Iterator<Item = (Vec<u8>, Vec<u8>)>> {
+        Ok(kv_store::StoreIter {
+            iter: self.kv_store.read().await.db.iter(),
+        })
+    }
+
+    pub async fn kv_install_snapshot(&mut self, piece: &[u8]) -> Result<()> {
+        let piece = piece.to_owned();
+        let mut ps = piece.split(|b| *b == '\n' as u8);
+
+        let key = ps.next().unwrap().to_owned();
+        let value = ps.next().unwrap().to_owned();
+        assert!(ps.next().is_none());
+
+        self.kv_store
+            .write()
+            .await
+            .kv_set(&key, &value)
+            .await
+            .unwrap();
+
+        Ok(())
     }
 
     pub async fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
@@ -120,61 +205,6 @@ impl Shard {
         );
 
         Ok(value.to_vec())
-    }
-
-    pub async fn clear_data(&self) {
-        todo!()
-    }
-
-    pub fn get_shard_id(&self) -> u64 {
-        todo!()
-    }
-
-    pub fn get_replicates(&self) -> Vec<SocketAddr> {
-        todo!()
-        // self.replicates.clone()
-    }
-
-    pub fn set_replicates(&mut self, replicats: &[SocketAddr]) -> Result<()> {
-        todo!()
-        // self.replicates = replicats.to_owned();
-        // Ok(())
-    }
-
-    pub fn set_is_leader(&mut self, l: bool) {
-        todo!()
-        // self.is_leader = l
-    }
-
-    pub fn is_leader(&self) -> bool {
-        todo!()
-    }
-
-    pub fn update_leader_change_ts(&mut self, t: time::SystemTime) {
-        todo!()
-        // self.leader_change_ts = t;
-    }
-
-    pub fn get_leader_change_ts(&self) -> time::SystemTime {
-        todo!()
-    }
-
-    pub async fn kv_install_snapshot(&mut self, piece: &[u8]) -> Result<()> {
-        let piece = piece.to_owned();
-        let mut ps = piece.split(|b| *b == '\n' as u8);
-
-        let key = ps.next().unwrap().to_owned();
-        let value = ps.next().unwrap().to_owned();
-        assert!(ps.next().is_none());
-
-        self.kv_store
-            .write()
-            .await
-            .kv_set(&key, &value)
-            .await
-            .unwrap();
-
-        Ok(())
     }
 }
 

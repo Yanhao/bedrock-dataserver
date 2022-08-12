@@ -8,7 +8,7 @@ use sled;
 use crate::{config::CONFIG, shard::SnapShoter};
 
 pub struct SledStore {
-    db: sled::Db,
+    pub db: sled::Db,
 }
 
 impl SledStore {
@@ -66,7 +66,7 @@ impl SledStore {
 }
 
 pub struct StoreIter {
-    iter: sled::Iter,
+    pub iter: sled::Iter,
 }
 
 impl Iterator for StoreIter {
