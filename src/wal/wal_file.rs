@@ -411,4 +411,19 @@ impl WalFile {
 
         Ok(ret)
     }
+
+    pub async fn discard(&mut self, version: u64) -> Result<()> {
+        self.sealed = false;
+        self.end_version = version;
+
+        let index = version - self.first_version();
+
+        let entry_offset = self.wal_entry_index[index as usize].entry_offset;
+        self.next_entry_offset = entry_offset;
+        self.footer = None;
+
+        self.file.set_len(entry_offset).await.unwrap();
+
+        Ok(())
+    }
 }

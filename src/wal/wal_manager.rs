@@ -71,6 +71,32 @@ impl WalManager {
 
         format!("wal.{}", suffix).to_owned().into()
     }
+
+    async fn discard(&mut self, index: u64) -> Result<()> {
+        loop {
+            if self.wal_files.last().unwrap().last_version() < index {
+                break;
+            }
+
+            if self.wal_files.last().unwrap().first_version() > index {
+                let wal_file = self.wal_files.pop().unwrap();
+
+                std::fs::remove_file(wal_file.path.clone()).unwrap();
+
+                continue;
+            }
+
+            self.wal_files
+                .last_mut()
+                .unwrap()
+                .discard(index)
+                .await
+                .unwrap();
+            break;
+        }
+
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -151,6 +177,8 @@ impl WalTrait for WalManager {
     }
 
     async fn append(&mut self, ents: Vec<Entry>) -> Result<()> {
+        self.discard(ents.first().unwrap().index).await?;
+
         if self.wal_files.last().unwrap().is_sealed() {
             let path = self.generate_new_wal_file_path();
             let new_wal_file = wal_file::WalFile::create_new_wal_file(path).await.unwrap();
