@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use futures_util::stream;
-use log::{error, info, warn};
+use log::{error, info, warn, debug};
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tonic::Request;
 
@@ -56,7 +56,7 @@ impl EntryWithNotifierReceiver {
 impl Fsm {
     pub fn new(shard: Shard, wal: Wal) -> Self {
         let next_index = wal.last_index() + 1;
-        error!("next_index: {}", next_index);
+        debug!("next_index: {}", next_index);
 
         let mut order_keeper = OrderKeeper::new();
         order_keeper.clear_waiters(next_index);
@@ -161,7 +161,7 @@ impl Fsm {
         let (tx, rx) = mpsc::channel(3);
 
         info!("ensure order, index: {}", entry.index);
-        self.order_keeper.ensure_order(entry.index).await.unwrap();
+        self.order_keeper.ensure_order(entry.index).await?;
 
         // TODO: use group commit to improve performance
         self.rep_log
@@ -193,7 +193,7 @@ impl Fsm {
     }
 
     pub async fn apply_entry(&mut self, entry: Entry) -> Result<()> {
-        self.order_keeper.ensure_order(entry.index).await.unwrap();
+        self.order_keeper.ensure_order(entry.index).await?;
 
         // TODO: use group commit to improve performance
         self.rep_log

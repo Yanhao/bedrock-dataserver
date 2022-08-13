@@ -94,7 +94,7 @@ impl OrderKeeper {
     }
 
     pub async fn ensure_order(&mut self, order: OrderType) -> Result<(), ShardError> {
-        if self.next_order < order {
+        if order < self.next_order {
             return Err(ShardError::IgnoreOrder);
         }
 
@@ -112,8 +112,7 @@ impl OrderKeeper {
             .lock()
             .await
             .wait(tokio::time::Duration::from_secs(1))
-            .await
-            .unwrap();
+            .await?;
 
         return notifier.lock().await.get_error();
     }

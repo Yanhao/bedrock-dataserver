@@ -3,8 +3,8 @@ use std::str::FromStr;
 
 use anyhow::{bail, Result};
 use async_trait::async_trait;
-use log::{error, debug, info};
-use tokio::fs::{create_dir_all, remove_dir};
+use log::{debug, error, info};
+use tokio::fs::{create_dir_all, remove_dir_all};
 
 use crate::config::CONFIG;
 
@@ -133,7 +133,7 @@ impl Wal {
     }
 
     pub async fn remove_wal(&self) -> Result<()> {
-        remove_dir(self.dir.as_path()).await.unwrap();
+        remove_dir_all(self.dir.as_path()).await.unwrap();
         Ok(())
     }
 

@@ -291,12 +291,11 @@ impl WalFile {
             return Err(WalError::FailedToSeek);
         }
 
-        let c = meta.entry_offset;
-
         if let Err(_) = self.file.write(&entry_buf).await {
             return Err(WalError::FailedToWrite);
         }
         self.wal_entry_index.push(meta);
+        self.end_version = ent.index;
 
         Ok(())
     }
