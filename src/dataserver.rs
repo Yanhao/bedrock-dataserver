@@ -45,7 +45,7 @@ fn setup_logger() -> Result<()> {
                 message
             ))
         })
-        .level(log::LevelFilter::Debug)
+        .level(log::LevelFilter::Info)
         .chain(std::io::stdout())
         // .chain(fern::log_file("dataserver.log"))
         .apply()?;

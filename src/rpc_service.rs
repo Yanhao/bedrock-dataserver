@@ -16,8 +16,8 @@ use tonic::{Request, Response, Status, Streaming};
 use dataserver::service_pb::data_service_server::DataService;
 use dataserver::service_pb::{
     CreateShardRequest, CreateShardResponse, DeleteShardRequest, ShardAppendLogRequest,
-    ShardAppendLogResponse, ShardReadRequest, ShardReadResponse, ShardWriteRequest,
-    ShardWriteResponse,
+    ShardAppendLogResponse, ShardInfoRequest, ShardInfoResponse, ShardReadRequest,
+    ShardReadResponse, ShardWriteRequest, ShardWriteResponse,
 };
 
 use crate::param_check;
@@ -107,11 +107,26 @@ impl DataService for RealDataServer {
             .await
             .unwrap();
 
-        if let Err(shard::ShardError::NotLeader) = entry_notifier.wait_result().await {
-            return Ok(Response::new(ShardWriteResponse { not_leader: true }));
+        match entry_notifier.wait_result().await {
+            Err(shard::ShardError::NotLeader) => {
+                return Ok(Response::new(ShardWriteResponse { not_leader: true }))
+            }
+            Err(_) => return Err(Status::internal("internal error")),
+            Ok(_) => {}
+        };
+
+        let shard = fsm.read().await.get_shard();
+
+        if let Err(_) = shard
+            .write()
+            .await
+            .put(&req.get_ref().key, &req.get_ref().value)
+            .await
+        {
+            return Err(Status::internal("internal error"));
         }
 
-        return Ok(Response::new(ShardWriteResponse::default()));
+        return Ok(Response::new(ShardWriteResponse { not_leader: false }));
     }
 
     async fn create_shard(
@@ -184,7 +199,7 @@ impl DataService for RealDataServer {
 
         fsm.read().await.mark_deleting();
         fsm.write().await.stop().await;
-        fsm.write().await.remove_wal().await;
+        fsm.write().await.remove_wal().await.unwrap();
 
         let shard = fsm.read().await.get_shard();
         shard.write().await.remove_shard().await.unwrap();
@@ -197,6 +212,35 @@ impl DataService for RealDataServer {
             .unwrap();
 
         Ok(Response::new(()))
+    }
+
+    async fn shard_info(
+        &self,
+        req: Request<ShardInfoRequest>,
+    ) -> Result<Response<ShardInfoResponse>, Status> {
+        if !param_check::shard_info_param_check(req.get_ref()) {
+            return Err(Status::invalid_argument(""));
+        }
+
+        let fsm = SHARD_MANAGER
+            .write()
+            .await
+            .load_shard_fsm(req.get_ref().shard_id)
+            .await
+            .unwrap();
+
+        let shard = fsm.read().await.get_shard();
+
+        Ok(Response::new(ShardInfoResponse {
+            shard_id: req.get_ref().shard_id,
+            create_ts: None,
+            replicates: shard.clone().read().await.get_replicates_strings(),
+            is_leader: shard.clone().read().await.is_leader(),
+            last_wal_index: fsm.clone().read().await.get_next_index(),
+            leader_change_ts: Some(shard.clone().read().await.get_leader_change_ts().into()),
+            replicates_update_ts: None,
+            leader: String::new(),
+        }))
     }
 
     async fn shard_append_log(

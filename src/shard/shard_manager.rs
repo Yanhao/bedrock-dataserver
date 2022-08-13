@@ -26,6 +26,10 @@ impl ShardManager {
     }
 
     pub async fn load_shard_fsm(&mut self, shard_id: u64) -> Result<Arc<RwLock<Fsm>>> {
+        if let Ok(v) =  self.get_shard_fsm(shard_id).await {
+            return Ok(v);
+        }
+        
         let shard = Shard::load_shard(shard_id).await;
         let fsm = Arc::new(RwLock::new(Fsm::new(
             shard,

@@ -48,7 +48,6 @@ impl Shard {
         let meta = ShardMeta {
             shard_id: req.get_ref().shard_id,
             is_leader: false,
-            storage_id: req.get_ref().storage_id,
             create_ts: req.get_ref().create_ts.to_owned().unwrap().into(),
             leader: req.get_ref().leader.clone(),
             leader_change_ts: req.get_ref().leader_change_ts.to_owned().unwrap().into(),
@@ -97,6 +96,10 @@ impl Shard {
             .iter()
             .map(|a| a.parse().unwrap())
             .collect()
+    }
+
+    pub fn get_replicates_strings(&self) -> Vec<String> {
+        self.shard_meta.replicates.clone()
     }
 
     pub async fn set_replicates(&mut self, replicates: &[SocketAddr]) -> Result<()> {
@@ -194,11 +197,11 @@ impl Shard {
             Ok(v) => v,
         };
 
-        info!(
-            "shard get: key={}, value={}",
-            from_utf8(key).unwrap(),
-            from_utf8(value.as_slice()).unwrap()
-        );
+        // info!(
+        //     "shard get: key={}, value={}",
+        //     from_utf8(key).unwrap(),
+        //     from_utf8(value.as_slice()).unwrap()
+        // );
 
         Ok(value.to_vec())
     }

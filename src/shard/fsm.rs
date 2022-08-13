@@ -36,6 +36,7 @@ pub struct Fsm {
     stop_ch: Mutex<Option<mpsc::Sender<()>>>,
 }
 
+#[derive(Debug)]
 pub struct EntryWithNotifierSender {
     pub entry: Entry,
     sender: mpsc::Sender<Result<(), ShardError>>,
@@ -92,6 +93,8 @@ impl Fsm {
                         let mut success_replicate_count = 0;
                         let en = e.unwrap();
 
+                        info!("fsm worker receive entry, entry: {:?}", en);
+
                         let replicates = shard.read().await.get_replicates();
                         'inner: for addr in replicates.iter() {
                             match Self::append_log_entry_to(shard.clone(), addr.to_string(), en.entry.clone(), rep_log.clone()).await {
@@ -113,7 +116,8 @@ impl Fsm {
                             }
                         }
 
-                        if success_replicate_count > 1 {
+                        info!("success_replicate_count: {}", success_replicate_count);
+                        if success_replicate_count >= 0 {
                             en.sender.send(Ok(())).await.unwrap();
                         } else {
                             en.sender.send(Err(ShardError::FailedToAppendLog)).await.unwrap();
@@ -150,6 +154,7 @@ impl Fsm {
 
         let (tx, rx) = mpsc::channel(3);
 
+        info!("ensure order, index: {}", entry.index);
         self.order_keeper.ensure_order(entry.index).await.unwrap();
 
         // TODO: use group commit to improve performance
@@ -169,18 +174,11 @@ impl Fsm {
                 entry: entry.clone(),
                 sender: tx,
             })
-            .await;
+            .await
+            .unwrap();
 
         self.order_keeper.pass_order(entry.index).await;
-
-        if entry.op == "put" {
-            self.shard
-                .write()
-                .await
-                .put(&entry.key, &entry.value)
-                .await
-                .unwrap();
-        }
+        info!("pass order, index: {}", entry.index);
 
         Ok(EntryWithNotifierReceiver {
             entry,
@@ -223,6 +221,10 @@ impl Fsm {
 
     pub async fn last_index(&self) -> u64 {
         self.rep_log.read().await.last_index()
+    }
+    
+    pub fn get_next_index(&self) -> u64 {
+        self.next_index.load(Ordering::Relaxed)
     }
 
     pub fn mark_deleting(&self) {

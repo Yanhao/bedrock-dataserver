@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 use anyhow::{anyhow, bail, Result};
 use async_trait::async_trait;
@@ -88,19 +89,22 @@ impl Wal {
 
     fn generate_new_wal_file_path(&self) -> PathBuf {
         if self.wal_files.len() == 0 {
-            return "wal.0".to_owned().into();
+            return self.dir.clone().join(String::from_str("wal.0").unwrap());
         }
 
         let suffix = self.wal_files.last().unwrap().suffix();
-
-        format!("wal.{}", suffix).to_owned().into()
+        return self.dir.clone().join(format!("wal.{}", suffix));
     }
+    
     pub async fn remove_wal(&self) -> Result<()> {
         remove_dir(self.dir.as_path()).await;
         Ok(())
     }
 
     async fn discard(&mut self, index: u64) -> Result<()> {
+        if self.wal_files.is_empty() {
+            return Ok(());
+        }
         loop {
             if self.wal_files.last().unwrap().last_version() < index {
                 break;
@@ -207,7 +211,7 @@ impl WalTrait for Wal {
     async fn append(&mut self, ents: Vec<Entry>) -> Result<()> {
         self.discard(ents.first().unwrap().index).await?;
 
-        if self.wal_files.last().unwrap().is_sealed() {
+        if self.wal_files.is_empty() || self.wal_files.last().unwrap().is_sealed() {
             let path = self.generate_new_wal_file_path();
             let new_wal_file = wal_file::WalFile::create_new_wal_file(path).await.unwrap();
 

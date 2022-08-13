@@ -9,6 +9,8 @@ use tokio::fs::remove_dir_all;
 
 use crate::{config::CONFIG, shard::SnapShoter};
 
+use super::error;
+
 pub struct SledStore {
     pub db: sled::Db,
 }
@@ -49,17 +51,24 @@ impl SledStore {
     pub async fn remove(shard_id: u64) -> Result<()> {
         let path = Self::store_path(shard_id);
         debug!("remove directory: {}", path.display());
-        
+
         remove_dir_all(path).await;
 
         Ok(())
     }
 
     pub async fn kv_get(&self, key: &[u8]) -> Result<Vec<u8>> {
-        let value_ref = self.db.get(key).unwrap().unwrap();
-        let value: &[u8] = value_ref.as_ref();
-
-        Ok(value.to_owned())
+        let iv = match self.db.get(key) {
+            Err(e) => {
+                bail!(error::KvStoreError::DbInternalError);
+            }
+            Ok(v) => v,
+        };
+        if iv.is_none() {
+            bail!(error::KvStoreError::NoSuchkey);
+        }
+        let v = iv.unwrap();
+        Ok(v.as_ref().to_owned())
     }
 
     pub async fn kv_set(&mut self, key: &[u8], value: &[u8]) -> Result<()> {
