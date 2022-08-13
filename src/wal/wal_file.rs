@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::slice;
 
 use anyhow::{anyhow, bail, Result};
-use log::error;
+use log::{info, error, debug};
 use prost::Message;
 use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
@@ -15,6 +15,7 @@ use dataserver::replog_pb::Entry;
 const MAX_META_COUNT: u64 = 10;
 const WAL_MAGIC: u64 = 0x12345;
 
+#[derive(Copy, Clone)]
 #[repr(C, packed)]
 pub struct WalEntryMeta {
     pub entry_offset: u64,
@@ -71,23 +72,7 @@ pub struct WalFile {
 }
 
 impl WalFile {
-    pub async fn load_wal_file(path: impl AsRef<Path>) -> Result<WalFile> {
-        error!("start load wal file, path: {}", path.as_ref().display());
-
-        let mut file = match OpenOptions::new()
-            .create_new(false)
-            .write(true)
-            .read(true)
-            .open(path.as_ref())
-            .await
-        {
-            Err(e) => {
-                error!("failed to open wal file: {:?}, err: {:?}", path.as_ref(), e);
-                bail!(WalError::FailedToOpen);
-            }
-            Ok(v) => v,
-        };
-
+    pub async fn load_wal_file_header(file: &mut File) -> Result<WalHeader> {
         let mut header: WalHeader = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
         let data = unsafe {
             slice::from_raw_parts_mut(
@@ -95,6 +80,31 @@ impl WalFile {
                 std::mem::size_of::<WalHeader>(),
             )
         };
+        if let Err(e) = file.read(data).await {
+            error!("failed to read wal header, err: {:?}", e);
+            bail!(WalError::FailedToRead);
+        }
+
+        Ok(header)
+    }
+
+    pub async fn load_sealed_wal_file(mut file: File, path: impl AsRef<Path>) -> Result<WalFile> {
+        let header = Self::load_wal_file_header(&mut file).await?;
+
+        let mut footer: WalFooter = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
+        let data = unsafe {
+            slice::from_raw_parts_mut(
+                &mut footer as *mut _ as *mut u8,
+                std::mem::size_of::<WalFooter>(),
+            )
+        };
+
+        let footer_offset = file.metadata().await.unwrap().len() - 4096;
+
+        file.seek(SeekFrom::Start(footer_offset))
+            .await
+            .map_err(|_| anyhow!(WalError::FailedToSeek))?;
+
         if let Err(e) = file.read(data).await {
             error!(
                 "failed to read wal header, wal file: {:?}, err: {:?}",
@@ -105,12 +115,56 @@ impl WalFile {
         }
 
         let mut metas = vec![];
+        metas.resize(
+            footer.entry_count as usize,
+            WalEntryMeta {
+                entry_offset: 0,
+                version: 0,
+            },
+        );
+        let metas_data = unsafe {
+            slice::from_raw_parts_mut(
+                &mut metas as *mut _ as *mut u8,
+                metas.len() * std::mem::size_of::<WalEntryMeta>(),
+            )
+        };
+        file.seek(SeekFrom::Start(footer.entry_index_offset))
+            .await
+            .map_err(|_| anyhow!(WalError::FailedToSeek))?;
+
+        if let Err(e) = file.read(metas_data).await {
+            error!(
+                "failed to read wal header, wal file: {:?}, err: {:?}",
+                path.as_ref(),
+                e
+            );
+            bail!(WalError::FailedToRead);
+        }
+
+        Ok(Self {
+            header: Box::new(header),
+
+            file,
+            path: path.as_ref().to_path_buf(),
+
+            next_entry_offset: footer_offset,
+            sealed: true,
+            start_version: footer.start_version,
+            end_version: footer.end_version,
+
+            footer: Some(Box::new(footer)),
+            wal_entry_index: metas,
+        })
+    }
+
+    pub async fn load_unsealed_wal_file(mut file: File, path: impl AsRef<Path>) -> Result<WalFile> {
+        let header = Self::load_wal_file_header(&mut file).await?;
+
+        let mut metas = vec![];
         let mut wal_entry_offset = header.first_entry_offset;
 
-        let mut sealed = false;
-
         loop {
-            error!("wal_entry_offset: {}", wal_entry_offset);
+            debug!("wal_entry_offset: {}", wal_entry_offset);
             file.seek(SeekFrom::Start(wal_entry_offset))
                 .await
                 .map_err(|_| anyhow!(WalError::FailedToSeek))?;
@@ -135,9 +189,8 @@ impl WalFile {
                 Ok(v) => {
                     let a = entry_header.offset;
                     let b = entry_header.version;
-                    error!("read meta header: offset: {}, version: {}", a, b);
+                    debug!("read meta header: offset: {}, version: {}", a, b);
                     if v == 0 {
-                        sealed = false;
                         break;
                     }
                 }
@@ -152,67 +205,50 @@ impl WalFile {
             wal_entry_offset += entry_header.entry_length;
         }
 
-        if !sealed {
-            return Ok(Self {
-                header: Box::new(header),
-                footer: None,
-
-                sealed,
-                file,
-                path: path.as_ref().to_path_buf(),
-
-                next_entry_offset: wal_entry_offset,
-
-                start_version: metas.first().unwrap().version,
-                end_version: metas.last().unwrap().version,
-
-                wal_entry_index: metas,
-            });
-        }
-
-        let file_size = file.metadata().await.unwrap().len();
-        let footer_offset = file_size - 4096;
-
-        let footer: WalFooter = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
-        let data = unsafe {
-            slice::from_raw_parts_mut(
-                &mut header as *mut _ as *mut u8,
-                std::mem::size_of::<WalFooter>(),
-            )
-        };
-
-        file.seek(SeekFrom::Start(footer_offset))
-            .await
-            .map_err(|_| anyhow!(WalError::FailedToSeek))?;
-
-        if let Err(e) = file.read(data).await {
-            error!(
-                "failed to read wal header, wal file: {:?}, err: {:?}",
-                path.as_ref(),
-                e
-            );
-            bail!(WalError::FailedToRead);
-        }
-
         Ok(Self {
             header: Box::new(header),
+            footer: None,
 
+            sealed: false,
             file,
             path: path.as_ref().to_path_buf(),
 
             next_entry_offset: wal_entry_offset,
-            sealed,
-            start_version: footer.start_version,
-            end_version: footer.end_version,
 
-            footer: Some(Box::new(footer)),
+            start_version: metas.first().unwrap().version,
+            end_version: metas.last().unwrap().version,
+
             wal_entry_index: metas,
         })
     }
 
+    pub async fn load_wal_file(path: impl AsRef<Path>, is_sealed: bool) -> Result<WalFile> {
+        info!("start load wal file, path: {}, is_sealed: {}", path.as_ref().display(), is_sealed);
+
+        let file = match OpenOptions::new()
+            .create_new(false)
+            .write(true)
+            .read(true)
+            .open(path.as_ref())
+            .await
+        {
+            Err(e) => {
+                error!("failed to open wal file: {:?}, err: {:?}", path.as_ref(), e);
+                bail!(WalError::FailedToOpen);
+            }
+            Ok(v) => v,
+        };
+
+        if is_sealed {
+            Self::load_sealed_wal_file(file, path).await
+        } else {
+            Self::load_unsealed_wal_file(file, path).await
+        }
+    }
+
     pub async fn append_entry(&mut self, ent: Entry) -> std::result::Result<(), WalError> {
         if self.entry_len() >= MAX_META_COUNT {
-            error!("wal file is full, length: {}", self.entry_len());
+            info!("wal file is full, length: {}", self.entry_len());
             return Err(WalError::WalFileFull);
         }
 
@@ -233,7 +269,7 @@ impl WalFile {
 
         let a = entry_header.offset;
         let b = entry_header.version;
-        error!("append meta header: offset: {}, version: {}", a, b);
+        debug!("append meta header: offset: {}, version: {}", a, b);
 
         let entry_header_data: &[u8] = unsafe {
             slice::from_raw_parts(
@@ -246,12 +282,9 @@ impl WalFile {
         // TODO: use writev to eliminate copy
         entry_buf.append(&mut entry_header_data.to_owned());
 
-        error!("1 buf length: {}", entry_buf.len());
-
         let mut buf = Vec::new();
         ent.encode(&mut buf).unwrap();
         entry_buf.append(&mut buf);
-        error!("2 buf length: {}", entry_buf.len());
 
         self.next_entry_offset += entry_buf.len() as u64;
         if let Err(e) = self.file.seek(SeekFrom::Start(meta.entry_offset)).await {
@@ -259,10 +292,8 @@ impl WalFile {
         }
 
         let c = meta.entry_offset;
-        error!("meta.entry_offset: {}", c);
 
-        if let Err(e) = self.file.write(&entry_buf).await {
-            error!("");
+        if let Err(_) = self.file.write(&entry_buf).await {
             return Err(WalError::FailedToWrite);
         }
         self.wal_entry_index.push(meta);
@@ -303,7 +334,7 @@ impl WalFile {
             )
         };
 
-        error!("wal file header length: {}", wal_header_as_data.len());
+        debug!("wal file header length: {}", wal_header_as_data.len());
 
         if let Err(e) = file.write(wal_header_as_data).await {
             error!("failed to write wal file header");
@@ -333,8 +364,9 @@ impl WalFile {
             )
         };
 
+        let entry_index_offset = self.next_entry_offset;
         self.file
-            .seek(SeekFrom::Start(self.next_entry_offset))
+            .seek(SeekFrom::Start(entry_index_offset))
             .await
             .map_err(|_| anyhow!(WalError::FailedToSeek))?;
 
@@ -347,7 +379,7 @@ impl WalFile {
             self.next_entry_offset + std::mem::size_of::<WalEntryMeta>() as u64 * (l as u64);
 
         let footer = WalFooter {
-            entry_index_offset: self.next_entry_offset,
+            entry_index_offset,
             entry_count: self.wal_entry_index.len() as u32,
 
             start_version: self.wal_entry_index[0].version,
@@ -362,6 +394,8 @@ impl WalFile {
                 std::mem::size_of::<WalFooter>(),
             )
         };
+
+        debug!("footer data length: {}", footer_data.len());
 
         self.file
             .seek(SeekFrom::Start(footer_offset))
@@ -452,22 +486,22 @@ impl WalFile {
     }
 }
 
-impl Ord for WalFile {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        return u64::cmp(&self.suffix(), &other.suffix());
-    }
-}
+// impl Ord for WalFile {
+//     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+//         return u64::cmp(&self.suffix(), &other.suffix());
+//     }
+// }
 
-impl Eq for WalFile {}
+// impl Eq for WalFile {}
 
-impl PartialEq for WalFile {
-    fn eq(&self, other: &Self) -> bool {
-        return self.suffix() == other.suffix();
-    }
-}
+// impl PartialEq for WalFile {
+//     fn eq(&self, other: &Self) -> bool {
+//         return self.suffix() == other.suffix();
+//     }
+// }
 
-impl PartialOrd for WalFile {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        return u64::partial_cmp(&self.suffix(), &other.suffix());
-    }
-}
+// impl PartialOrd for WalFile {
+//     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+//         return u64::partial_cmp(&self.suffix(), &other.suffix());
+//     }
+// }

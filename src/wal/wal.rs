@@ -1,13 +1,12 @@
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{bail, Result};
 use async_trait::async_trait;
-use log::error;
+use log::{error, debug, info};
 use tokio::fs::{create_dir_all, remove_dir};
 
 use crate::config::CONFIG;
-use crate::shard::ShardError;
 
 use super::error::WalError;
 use super::{wal_file, WalTrait};
@@ -22,6 +21,13 @@ pub struct Wal {
 }
 
 impl Wal {
+    pub fn suffix(path: impl AsRef<Path>) -> u64 {
+        let path = path.as_ref().as_os_str().to_str().unwrap();
+        let suffix_str = path.split(".").last().unwrap();
+        let suffix = suffix_str.parse().unwrap();
+        suffix
+    }
+
     pub async fn create_wal_dir(shard_id: u64) -> Result<()> {
         let wal_dir: PathBuf = CONFIG
             .read()
@@ -72,19 +78,43 @@ impl Wal {
             bail!(WalError::WrongFilePath);
         }
 
-        let mut wal_files = Vec::new();
-        for entry in dir.as_ref().read_dir().expect("") {
+        let mut wal_file_path = vec![];
+        for entry in dir.as_ref().read_dir().unwrap() {
             if let Ok(entry) = entry {
-                error!("load wal, path: {}", entry.path().display());
-
-                let wal_file = wal_file::WalFile::load_wal_file(entry.path())
-                    .await
-                    .unwrap();
-
-                error!("wal last index: {}", wal_file.last_version());
-
-                wal_files.push(wal_file);
+                wal_file_path.push(entry.path());
             }
+        }
+        if wal_file_path.is_empty() {
+            return Ok(Wal {
+                wal_files: vec![],
+                dir: dir.as_ref().to_owned(),
+            });
+        }
+
+        wal_file_path.sort_by(|a: &PathBuf, b: &PathBuf| {
+            let a_suffix = Self::suffix(a.as_path());
+            let b_suffix = Self::suffix(b.as_path());
+            u64::cmp(&a_suffix, &b_suffix)
+        });
+
+        debug!("wal_file_path length: {}", wal_file_path.len());
+
+        let mut wal_files = vec![];
+
+        let mut i = 0;
+        let last_i = wal_file_path.len() - 1;
+        for p in wal_file_path.iter() {
+            info!("load wal, path: {}", p.as_path().display());
+
+            assert!(i <= last_i, "invalid vector index");
+            let wal_file = wal_file::WalFile::load_wal_file(p.as_path(), i == last_i && i != 0)
+                .await
+                .unwrap();
+
+            debug!("wal last index: {}", wal_file.last_version());
+
+            wal_files.push(wal_file);
+            i += 1;
         }
 
         Ok(Wal {
@@ -233,7 +263,7 @@ impl WalTrait for Wal {
                 self.wal_files.push(new_wal_file);
             }
 
-            error!("append wal entry, index: {}", ent.index);
+            debug!("append wal entry, index: {}", ent.index);
 
             match self
                 .wal_files
