@@ -17,14 +17,14 @@ use crate::connections::CONNECTIONS;
 use crate::shard::error::ShardError;
 use crate::shard::order_keeper::OrderKeeper;
 use crate::shard::Shard;
-use crate::wal::WalManager;
+use crate::wal::Wal;
 use crate::wal::WalTrait;
 
 const INPUT_CHANNEL_LEN: usize = 10240;
 
 pub struct Fsm {
     shard: Arc<RwLock<Shard>>,
-    rep_log: Arc<RwLock<WalManager>>,
+    rep_log: Arc<RwLock<Wal>>,
 
     next_index: AtomicU64,
     order_keeper: OrderKeeper,
@@ -53,7 +53,7 @@ impl EntryWithNotifierReceiver {
 }
 
 impl Fsm {
-    pub fn new(shard: Shard, rep_log: Arc<RwLock<WalManager>>) -> Self {
+    pub fn new(shard: Shard, rep_log: Arc<RwLock<Wal>>) -> Self {
         Self {
             shard: Arc::new(RwLock::new(shard)),
             rep_log,
@@ -253,7 +253,7 @@ impl Fsm {
         shard: Arc<RwLock<Shard>>,
         addr: String,
         en: Entry,
-        replog: Arc<RwLock<WalManager>>,
+        replog: Arc<RwLock<Wal>>,
     ) -> std::result::Result<(), ShardError> {
         let shard_id = shard.read().await.get_shard_id();
         let addr_str = addr.to_string();

@@ -5,7 +5,7 @@ use anyhow::{bail, Result};
 use once_cell::sync::Lazy;
 use tokio::sync::RwLock;
 
-use crate::wal::WalManager;
+use crate::wal::Wal;
 
 use super::{error::ShardError, fsm::Fsm, Shard};
 
@@ -30,7 +30,7 @@ impl ShardManager {
         let fsm = Arc::new(RwLock::new(Fsm::new(
             shard,
             Arc::new(RwLock::new(
-                WalManager::load_wal_by_shard_id(shard_id).await.unwrap(),
+                Wal::load_wal_by_shard_id(shard_id).await.unwrap(),
             )),
         )));
 

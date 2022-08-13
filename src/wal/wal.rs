@@ -14,12 +14,12 @@ use dataserver::replog_pb::Entry;
 
 const MAX_ENTRY_COUNT: u64 = 100;
 
-pub struct WalManager {
+pub struct Wal {
     wal_files: Vec<wal_file::WalFile>,
     dir: PathBuf,
 }
 
-impl WalManager {
+impl Wal {
     pub async fn create_wal_dir(shard_id: u64) -> Result<()> {
         let wal_dir: PathBuf = CONFIG
             .read()
@@ -41,7 +41,7 @@ impl WalManager {
         Ok(())
     }
 
-    pub async fn load_wal_by_shard_id(shard_id: u64) -> Result<WalManager> {
+    pub async fn load_wal_by_shard_id(shard_id: u64) -> Result<Wal> {
         let wal_dir: PathBuf = CONFIG
             .read()
             .unwrap()
@@ -57,10 +57,10 @@ impl WalManager {
             .join::<String>(format!("{:#04x}", storage_id))
             .join::<String>(format!("{:#04x}", shard_id));
 
-        return WalManager::load(wal_manager_dir).await;
+        return Wal::load(wal_manager_dir).await;
     }
 
-    async fn load(dir: impl AsRef<Path>) -> Result<WalManager> {
+    async fn load(dir: impl AsRef<Path>) -> Result<Wal> {
         if !dir.as_ref().exists() {
             error!("file not exists: path: {}", dir.as_ref().display());
             bail!(WalError::FileNotExists);
@@ -80,7 +80,7 @@ impl WalManager {
             }
         }
 
-        Ok(WalManager {
+        Ok(Wal {
             wal_files,
             dir: dir.as_ref().to_owned(),
         })
@@ -128,7 +128,7 @@ impl WalManager {
 }
 
 #[async_trait]
-impl WalTrait for WalManager {
+impl WalTrait for Wal {
     async fn entries(&mut self, mut lo: u64, hi: u64, max_size: u64) -> Result<Vec<Entry>> {
         if hi - lo >= MAX_ENTRY_COUNT {
             bail!(WalError::TooManyEntries);

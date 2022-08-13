@@ -22,7 +22,7 @@ use dataserver::service_pb::{
 
 use crate::param_check;
 use crate::shard::{self, Fsm, SHARD_MANAGER};
-use crate::wal::WalManager;
+use crate::wal::Wal;
 
 #[derive(Debug, Default)]
 pub struct RealDataServer {}
@@ -134,7 +134,7 @@ impl DataService for RealDataServer {
         let new_shard = shard::Shard::create_shard(&req).await;
 
         let shard_id = req.get_ref().shard_id;
-        WalManager::create_wal_dir(shard_id).await.unwrap();
+        Wal::create_wal_dir(shard_id).await.unwrap();
 
         if let Err(e) = SHARD_MANAGER
             .write()
@@ -142,7 +142,7 @@ impl DataService for RealDataServer {
             .create_shard_fsm(Fsm::new(
                 new_shard,
                 Arc::new(RwLock::new(
-                    WalManager::load_wal_by_shard_id(shard_id).await.unwrap(),
+                    Wal::load_wal_by_shard_id(shard_id).await.unwrap(),
                 )),
             ))
             .await
