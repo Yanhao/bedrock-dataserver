@@ -34,7 +34,13 @@ impl HeartBeater {
                         let addr = meta.metaserver_leader;
 
                         info!("heartbeat to metaserver ... metaserver addr: {}", addr);
-                        let mut client = meta_service_client::MetaServiceClient::connect(addr.clone()).await.unwrap();
+                        let mut client = match  meta_service_client::MetaServiceClient::connect(addr.clone()).await {
+                            Err(e) => {
+                                warn!("failed to connect to {}, err: {:?}", addr, e);
+                                continue;
+                            },
+                            Ok(v) => v
+                        };
 
                         let req = tonic::Request::new(HeartBeatRequest{
                             addr: get_self_socket_addr().to_string(),

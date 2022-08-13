@@ -3,7 +3,9 @@ use std::path::PathBuf;
 
 use anyhow::{bail, Result};
 use async_trait::async_trait;
+use log::debug;
 use sled;
+use tokio::fs::remove_dir_all;
 
 use crate::{config::CONFIG, shard::SnapShoter};
 
@@ -46,8 +48,9 @@ impl SledStore {
 
     pub async fn remove(shard_id: u64) -> Result<()> {
         let path = Self::store_path(shard_id);
-
-        std::fs::remove_file(path).unwrap();
+        debug!("remove directory: {}", path.display());
+        
+        remove_dir_all(path).await;
 
         Ok(())
     }

@@ -6,6 +6,8 @@ pub enum WalError {
     NoSuchFile,
     #[error("file already exists")]
     FileExists,
+    #[error("file not exists")]
+    FileNotExists,
 
     #[error("wrong file path")]
     WrongFilePath,

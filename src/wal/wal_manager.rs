@@ -2,6 +2,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, Result};
 use async_trait::async_trait;
+use log::error;
+use tokio::fs::{create_dir_all, remove_dir};
 
 use crate::config::CONFIG;
 
@@ -18,6 +20,27 @@ pub struct WalManager {
 }
 
 impl WalManager {
+    pub async fn create_wal_dir(shard_id: u64) -> Result<()> {
+        let wal_dir: PathBuf = CONFIG
+            .read()
+            .unwrap()
+            .wal_directory
+            .as_ref()
+            .unwrap()
+            .into();
+
+        let storage_id: u32 = ((shard_id & 0xFFFF0000) >> 32) as u32;
+        let shard_id: u32 = (shard_id & 0x0000FFFF) as u32;
+
+        let wal_manager_dir = wal_dir
+            .join::<String>(format!("{:#04x}", storage_id))
+            .join::<String>(format!("{:#04x}", shard_id));
+
+        create_dir_all(wal_manager_dir).await.unwrap();
+
+        Ok(())
+    }
+
     pub async fn load_wal_by_shard_id(shard_id: u64) -> Result<WalManager> {
         let wal_dir: PathBuf = CONFIG
             .read()
@@ -37,9 +60,10 @@ impl WalManager {
         return WalManager::load(wal_manager_dir).await;
     }
 
-    pub async fn load(dir: impl AsRef<Path>) -> Result<WalManager> {
+    async fn load(dir: impl AsRef<Path>) -> Result<WalManager> {
         if !dir.as_ref().exists() {
-            bail!(WalError::FileExists);
+            error!("file not exists: path: {}", dir.as_ref().display());
+            bail!(WalError::FileNotExists);
         }
 
         if !dir.as_ref().is_dir() {
@@ -70,6 +94,10 @@ impl WalManager {
         let suffix = self.wal_files.last().unwrap().suffix();
 
         format!("wal.{}", suffix).to_owned().into()
+    }
+    pub async fn remove_wal(&self) -> Result<()> {
+        remove_dir(self.dir.as_path()).await;
+        Ok(())
     }
 
     async fn discard(&mut self, index: u64) -> Result<()> {

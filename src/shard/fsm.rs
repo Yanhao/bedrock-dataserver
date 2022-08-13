@@ -25,12 +25,13 @@ const INPUT_CHANNEL_LEN: usize = 10240;
 pub struct Fsm {
     shard: Arc<RwLock<Shard>>,
     rep_log: Arc<RwLock<WalManager>>,
+
     next_index: AtomicU64,
     order_keeper: OrderKeeper,
     input: Mutex<Option<mpsc::Sender<EntryWithNotifierSender>>>,
 
     deleting: AtomicBool,
-    instaling_snapshot: AtomicBool,
+    installing_snapshot: AtomicBool,
 
     stop_ch: Mutex<Option<mpsc::Sender<()>>>,
 }
@@ -52,7 +53,6 @@ impl EntryWithNotifierReceiver {
 }
 
 impl Fsm {
-    // pub fn new(shard: Shard, rep_log: Arc<RwLock<ReplicateLog>>) -> Self {
     pub fn new(shard: Shard, rep_log: Arc<RwLock<WalManager>>) -> Self {
         Self {
             shard: Arc::new(RwLock::new(shard)),
@@ -62,7 +62,7 @@ impl Fsm {
             input: Mutex::new(None),
 
             deleting: false.into(),
-            instaling_snapshot: false.into(),
+            installing_snapshot: false.into(),
 
             stop_ch: Mutex::new(None),
         }
@@ -139,7 +139,12 @@ impl Fsm {
             .unwrap();
     }
 
-    pub async fn process_wirte(&mut self, entry: Entry) -> Result<EntryWithNotifierReceiver> {
+    pub async fn remove_wal(&mut self) -> Result<()> {
+        self.rep_log.read().await.remove_wal().await;
+        Ok(())
+    }
+
+    pub async fn process_write(&mut self, entry: Entry) -> Result<EntryWithNotifierReceiver> {
         let mut entry = entry.clone();
         entry.index = self.next_index.fetch_add(1, Ordering::Relaxed);
 
@@ -228,12 +233,12 @@ impl Fsm {
         self.deleting.load(Ordering::Relaxed)
     }
 
-    pub fn set_instaling_snapshot(&self, t: bool) {
-        self.instaling_snapshot.store(t, Ordering::Relaxed);
+    pub fn set_installing_snapshot(&self, t: bool) {
+        self.installing_snapshot.store(t, Ordering::Relaxed);
     }
 
-    pub fn is_instaling_snapshot(&self) -> bool {
-        self.instaling_snapshot.load(Ordering::Relaxed)
+    pub fn is_installing_snapshot(&self) -> bool {
+        self.installing_snapshot.load(Ordering::Relaxed)
     }
 
     pub async fn is_leader(&self) -> bool {
