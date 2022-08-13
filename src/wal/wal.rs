@@ -7,6 +7,7 @@ use log::error;
 use tokio::fs::{create_dir_all, remove_dir};
 
 use crate::config::CONFIG;
+use crate::shard::ShardError;
 
 use super::error::WalError;
 use super::{wal_file, WalTrait};
@@ -98,7 +99,7 @@ impl Wal {
         }
 
         let suffix = self.wal_files.last().unwrap().suffix();
-        return self.dir.clone().join(format!("wal.{}", suffix));
+        return self.dir.clone().join(format!("wal.{}", suffix + 1));
     }
 
     pub async fn remove_wal(&self) -> Result<()> {
@@ -224,22 +225,32 @@ impl WalTrait for Wal {
     async fn append(&mut self, ents: Vec<Entry>) -> Result<()> {
         self.discard(ents.first().unwrap().index).await?;
 
-        if self.wal_files.is_empty() || self.wal_files.last().unwrap().is_sealed() {
-            let path = self.generate_new_wal_file_path();
-            let new_wal_file = wal_file::WalFile::create_new_wal_file(path).await.unwrap();
-
-            self.wal_files.push(new_wal_file);
-        }
-
         for ent in ents.iter() {
+            if self.wal_files.is_empty() || self.wal_files.last().unwrap().is_sealed() {
+                let path = self.generate_new_wal_file_path();
+                let new_wal_file = wal_file::WalFile::create_new_wal_file(path).await.unwrap();
+
+                self.wal_files.push(new_wal_file);
+            }
+
             error!("append wal entry, index: {}", ent.index);
 
-            self.wal_files
+            match self
+                .wal_files
                 .last_mut()
                 .unwrap()
                 .append_entry(ent.clone())
                 .await
-                .unwrap();
+            {
+                Err(WalError::WalFileFull) => {
+                    self.wal_files.last_mut().unwrap().seal().await.unwrap();
+                    continue;
+                }
+                Err(e) => {
+                    bail!(e);
+                }
+                Ok(_) => {}
+            }
         }
 
         Ok(())

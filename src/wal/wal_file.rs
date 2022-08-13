@@ -12,7 +12,7 @@ use super::error::WalError;
 
 use dataserver::replog_pb::Entry;
 
-const MAX_META_COUNT: u64 = 1024;
+const MAX_META_COUNT: u64 = 10;
 const WAL_MAGIC: u64 = 0x12345;
 
 #[repr(C, packed)]
@@ -210,7 +210,12 @@ impl WalFile {
         })
     }
 
-    pub async fn append_entry(&mut self, ent: Entry) -> Result<()> {
+    pub async fn append_entry(&mut self, ent: Entry) -> std::result::Result<(), WalError> {
+        if self.entry_len() >= MAX_META_COUNT {
+            error!("wal file is full, length: {}", self.entry_len());
+            return Err(WalError::WalFileFull);
+        }
+
         let meta = WalEntryMeta {
             entry_offset: self.next_entry_offset,
             version: ent.index,
@@ -249,17 +254,16 @@ impl WalFile {
         error!("2 buf length: {}", entry_buf.len());
 
         self.next_entry_offset += entry_buf.len() as u64;
-        self.file
-            .seek(SeekFrom::Start(meta.entry_offset))
-            .await
-            .map_err(|_| anyhow!(WalError::FailedToSeek))?;
+        if let Err(e) = self.file.seek(SeekFrom::Start(meta.entry_offset)).await {
+            return Err(WalError::FailedToSeek);
+        }
 
-            let c = meta.entry_offset;
+        let c = meta.entry_offset;
         error!("meta.entry_offset: {}", c);
 
         if let Err(e) = self.file.write(&entry_buf).await {
             error!("");
-            bail!(WalError::FailedToWrite);
+            return Err(WalError::FailedToWrite);
         }
         self.wal_entry_index.push(meta);
 
@@ -369,6 +373,8 @@ impl WalFile {
             bail!(WalError::FailedToWrite);
         }
 
+        self.sealed = true;
+
         Ok(())
     }
 
@@ -443,5 +449,25 @@ impl WalFile {
         self.file.set_len(entry_offset).await.unwrap();
 
         Ok(())
+    }
+}
+
+impl Ord for WalFile {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        return u64::cmp(&self.suffix(), &other.suffix());
+    }
+}
+
+impl Eq for WalFile {}
+
+impl PartialEq for WalFile {
+    fn eq(&self, other: &Self) -> bool {
+        return self.suffix() == other.suffix();
+    }
+}
+
+impl PartialOrd for WalFile {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        return u64::partial_cmp(&self.suffix(), &other.suffix());
     }
 }

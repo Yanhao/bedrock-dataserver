@@ -28,8 +28,10 @@ pub enum WalError {
     #[error("invalid parameter")]
     InvalidParameter,
 
-    #[error("emtry wal files")]
+    #[error("empty wal files")]
     EmptyWalFiles,
+    #[error("wal file full")]
+    WalFileFull,
 
     #[error("to many entries")]
     TooManyEntries,
