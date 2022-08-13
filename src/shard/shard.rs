@@ -26,18 +26,18 @@ pub struct Shard {
 }
 
 impl Shard {
-    pub async fn load_shard(shard_id: u64) -> Self {
+    pub async fn load_shard(shard_id: u64) -> Result<Self> {
         let sled_kv = kv_store::SledStore::load(shard_id).await.unwrap();
 
         let meta_key: &[u8] = SHARD_META_KEY.as_bytes();
         let raw_meta = sled_kv.kv_get(meta_key).await.unwrap();
         let meta = ShardMeta::decode(&*raw_meta).unwrap();
 
-        Self {
+        Ok(Self {
             shard_id,
             kv_store: Some(RwLock::new(sled_kv)),
             shard_meta: meta,
-        }
+        })
     }
 
     pub async fn create_shard(req: &Request<CreateShardRequest>) -> Self {

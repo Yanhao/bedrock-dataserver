@@ -156,9 +156,7 @@ impl DataService for RealDataServer {
             .await
             .create_shard_fsm(Fsm::new(
                 new_shard,
-                Arc::new(RwLock::new(
-                    Wal::load_wal_by_shard_id(shard_id).await.unwrap(),
-                )),
+                Wal::load_wal_by_shard_id(shard_id).await.unwrap(),
             ))
             .await
         {

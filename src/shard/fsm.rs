@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use futures_util::stream;
-use log::{info, warn};
+use log::{error, info, warn};
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tonic::Request;
 
@@ -54,12 +54,18 @@ impl EntryWithNotifierReceiver {
 }
 
 impl Fsm {
-    pub fn new(shard: Shard, rep_log: Arc<RwLock<Wal>>) -> Self {
+    pub fn new(shard: Shard, wal: Wal) -> Self {
+        let next_index = wal.last_index() + 1;
+        error!("next_index: {}", next_index);
+
+        let mut order_keeper = OrderKeeper::new();
+        order_keeper.clear_waiters(next_index);
+
         Self {
             shard: Arc::new(RwLock::new(shard)),
-            rep_log,
-            next_index: 0.into(),
-            order_keeper: OrderKeeper::new(),
+            rep_log: Arc::new(RwLock::new(wal)),
+            next_index: next_index.into(),
+            order_keeper,
             input: Mutex::new(None),
 
             deleting: false.into(),
@@ -222,7 +228,7 @@ impl Fsm {
     pub async fn last_index(&self) -> u64 {
         self.rep_log.read().await.last_index()
     }
-    
+
     pub fn get_next_index(&self) -> u64 {
         self.next_index.load(Ordering::Relaxed)
     }

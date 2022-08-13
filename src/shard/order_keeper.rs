@@ -81,24 +81,24 @@ impl Ord for Oitem {
 }
 
 pub struct OrderKeeper {
-    netxt_order: OrderType,
+    next_order: OrderType,
     queue: BinaryHeap<Oitem>,
 }
 
 impl OrderKeeper {
     pub fn new() -> Self {
         Self {
-            netxt_order: INVALID_ORDER,
+            next_order: INVALID_ORDER,
             queue: BinaryHeap::new(),
         }
     }
 
     pub async fn ensure_order(&mut self, order: OrderType) -> Result<(), ShardError> {
-        if self.netxt_order < order {
+        if self.next_order < order {
             return Err(ShardError::IgnoreOrder);
         }
 
-        if self.netxt_order == order {
+        if self.next_order == order {
             return Ok(());
         }
 
@@ -119,9 +119,9 @@ impl OrderKeeper {
     }
 
     pub async fn pass_order(&mut self, order: OrderType) {
-        self.netxt_order = order + 1;
+        self.next_order = order + 1;
 
-        if self.queue.len() != 0 && self.queue.peek().unwrap().order == self.netxt_order {
+        if self.queue.len() != 0 && self.queue.peek().unwrap().order == self.next_order {
             let item = self.queue.peek().unwrap().notifier.clone();
 
             self.queue.pop();
@@ -140,11 +140,11 @@ impl OrderKeeper {
     }
 
     pub fn set_next_order(&mut self, next_order: OrderType) {
-        self.netxt_order = next_order;
+        self.next_order = next_order;
     }
 
     pub fn get_next_order(&self) -> OrderType {
-        self.netxt_order
+        self.next_order
     }
 }
 

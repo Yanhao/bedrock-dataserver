@@ -72,6 +72,8 @@ pub struct WalFile {
 
 impl WalFile {
     pub async fn load_wal_file(path: impl AsRef<Path>) -> Result<WalFile> {
+        error!("start load wal file, path: {}", path.as_ref().display());
+
         let mut file = match OpenOptions::new()
             .create_new(false)
             .write(true)
@@ -108,6 +110,7 @@ impl WalFile {
         let mut sealed = false;
 
         loop {
+            error!("wal_entry_offset: {}", wal_entry_offset);
             file.seek(SeekFrom::Start(wal_entry_offset))
                 .await
                 .map_err(|_| anyhow!(WalError::FailedToSeek))?;
@@ -130,6 +133,9 @@ impl WalFile {
                     bail!(WalError::FailedToRead);
                 }
                 Ok(v) => {
+                    let a = entry_header.offset;
+                    let b = entry_header.version;
+                    error!("read meta header: offset: {}, version: {}", a, b);
                     if v == 0 {
                         sealed = false;
                         break;
@@ -143,6 +149,7 @@ impl WalFile {
             });
 
             wal_entry_offset += std::mem::size_of::<WalEntryHeader>() as u64;
+            wal_entry_offset += entry_header.entry_length;
         }
 
         if !sealed {
@@ -219,7 +226,9 @@ impl WalFile {
             padding_: [0; 80],
         };
 
-        let mut entry_buf = vec![];
+        let a = entry_header.offset;
+        let b = entry_header.version;
+        error!("append meta header: offset: {}, version: {}", a, b);
 
         let entry_header_data: &[u8] = unsafe {
             slice::from_raw_parts(
@@ -228,18 +237,25 @@ impl WalFile {
             )
         };
 
+        let mut entry_buf = vec![];
         // TODO: use writev to eliminate copy
         entry_buf.append(&mut entry_header_data.to_owned());
+
+        error!("1 buf length: {}", entry_buf.len());
 
         let mut buf = Vec::new();
         ent.encode(&mut buf).unwrap();
         entry_buf.append(&mut buf);
+        error!("2 buf length: {}", entry_buf.len());
 
         self.next_entry_offset += entry_buf.len() as u64;
         self.file
             .seek(SeekFrom::Start(meta.entry_offset))
             .await
             .map_err(|_| anyhow!(WalError::FailedToSeek))?;
+
+            let c = meta.entry_offset;
+        error!("meta.entry_offset: {}", c);
 
         if let Err(e) = self.file.write(&entry_buf).await {
             error!("");
@@ -282,6 +298,8 @@ impl WalFile {
                 std::mem::size_of::<WalHeader>(),
             )
         };
+
+        error!("wal file header length: {}", wal_header_as_data.len());
 
         if let Err(e) = file.write(wal_header_as_data).await {
             error!("failed to write wal file header");

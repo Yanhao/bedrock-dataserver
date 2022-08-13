@@ -74,9 +74,14 @@ impl Wal {
         let mut wal_files = Vec::new();
         for entry in dir.as_ref().read_dir().expect("") {
             if let Ok(entry) = entry {
+                error!("load wal, path: {}", entry.path().display());
+
                 let wal_file = wal_file::WalFile::load_wal_file(entry.path())
                     .await
                     .unwrap();
+
+                error!("wal last index: {}", wal_file.last_version());
+
                 wal_files.push(wal_file);
             }
         }
@@ -95,9 +100,9 @@ impl Wal {
         let suffix = self.wal_files.last().unwrap().suffix();
         return self.dir.clone().join(format!("wal.{}", suffix));
     }
-    
+
     pub async fn remove_wal(&self) -> Result<()> {
-        remove_dir(self.dir.as_path()).await;
+        remove_dir(self.dir.as_path()).await.unwrap();
         Ok(())
     }
 
@@ -201,10 +206,18 @@ impl WalTrait for Wal {
     }
 
     fn first_index(&self) -> u64 {
+        if self.wal_files.is_empty() {
+            return 0;
+        }
+
         self.wal_files.first().unwrap().first_version()
     }
 
     fn last_index(&self) -> u64 {
+        if self.wal_files.is_empty() {
+            return 0;
+        }
+
         self.wal_files.last().unwrap().last_version()
     }
 
@@ -219,6 +232,8 @@ impl WalTrait for Wal {
         }
 
         for ent in ents.iter() {
+            error!("append wal entry, index: {}", ent.index);
+
             self.wal_files
                 .last_mut()
                 .unwrap()
