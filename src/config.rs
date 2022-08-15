@@ -82,7 +82,7 @@ pub fn config_mod_init(config_file: &str) -> Result<()> {
 
     validate_configuration(&conf)?;
 
-    let addr: SocketAddr = conf.raft_server_addr.clone().unwrap().parse().unwrap();
+    let addr: SocketAddr = conf.rpc_server_addr.clone().unwrap().parse().unwrap();
     let ip = get_if_addrs().unwrap()[0].addr.ip();
 
     *SELF_ADDR.write().unwrap() = SocketAddr::new(ip, addr.port());
