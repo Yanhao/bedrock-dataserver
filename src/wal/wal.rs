@@ -28,6 +28,21 @@ impl Wal {
         suffix
     }
 
+    fn generage_path(wal_dir: impl AsRef<Path>, shard_id: u64) -> PathBuf {
+        info!("shard_id: 0x{:016x}", shard_id);
+        let storage_id: u32 = ((shard_id & 0xFFFFFFFF_00000000) >> 32) as u32;
+        let shard_isn: u32 = (shard_id & 0x00000000_FFFFFFFF) as u32;
+        info!(
+            "storage_id: 0x{:08x}, shard_isn: 0x{:08x}",
+            storage_id, shard_isn
+        );
+
+        wal_dir
+            .as_ref()
+            .join::<String>(format!("{:08x}", storage_id))
+            .join::<String>(format!("{:08x}", shard_isn))
+    }
+
     pub async fn create_wal_dir(shard_id: u64) -> Result<()> {
         let wal_dir: PathBuf = CONFIG
             .read()
@@ -37,13 +52,7 @@ impl Wal {
             .unwrap()
             .into();
 
-        let storage_id: u32 = ((shard_id & 0xFFFF0000) >> 32) as u32;
-        let shard_id: u32 = (shard_id & 0x0000FFFF) as u32;
-
-        let wal_manager_dir = wal_dir
-            .join::<String>(format!("{:#04x}", storage_id))
-            .join::<String>(format!("{:#04x}", shard_id));
-
+        let wal_manager_dir = Self::generage_path(wal_dir, shard_id);
         create_dir_all(wal_manager_dir).await.unwrap();
 
         Ok(())
@@ -58,13 +67,7 @@ impl Wal {
             .unwrap()
             .into();
 
-        let storage_id: u32 = ((shard_id & 0xFFFF0000) >> 32) as u32;
-        let shard_id: u32 = (shard_id & 0x0000FFFF) as u32;
-
-        let wal_manager_dir = wal_dir
-            .join::<String>(format!("{:#04x}", storage_id))
-            .join::<String>(format!("{:#04x}", shard_id));
-
+        let wal_manager_dir = Self::generage_path(wal_dir, shard_id);
         return Wal::load(wal_manager_dir).await;
     }
 

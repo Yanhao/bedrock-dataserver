@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use anyhow::{bail, Result};
 use async_trait::async_trait;
-use log::debug;
+use log::{debug, info};
 use sled;
 use tokio::fs::remove_dir_all;
 
@@ -25,15 +25,17 @@ impl SledStore {
             .unwrap()
             .into();
 
-        let storage_id: u32 = ((shard_id & 0xFFFF0000) >> 32) as u32;
-        let shard_id: u32 = (shard_id & 0x0000FFFF) as u32;
-
-        let kv_data_dir = wal_dir
+        info!("shard_id: 0x{:016x}", shard_id);
+        let storage_id: u32 = ((shard_id & 0xFFFFFFFF_00000000) >> 32) as u32;
+        let shard_isn: u32 = (shard_id & 0x00000000_FFFFFFFF) as u32;
+        info!(
+            "storage_id: 0x{:08x}, shard_isn: 0x{:08x}",
+            storage_id, shard_isn
+        );
+        wal_dir
             .join::<String>("data".into())
-            .join::<String>(format!("{:#04x}", storage_id))
-            .join::<String>(format!("{:#04x}", shard_id));
-
-        kv_data_dir
+            .join::<String>(format!("{:08x}", storage_id))
+            .join::<String>(format!("{:08x}", shard_isn))
     }
 
     pub async fn load(shard_id: u64) -> Result<Self> {
