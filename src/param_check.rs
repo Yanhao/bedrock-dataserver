@@ -57,6 +57,6 @@ pub fn transfer_shard_leader_param_check(req: &TransferShardLeaderRequest) -> bo
             return false;
         }
     }
-    
+
     return true;
 }

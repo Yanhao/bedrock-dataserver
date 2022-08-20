@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use anyhow::Result;
+use log::{debug, error, info};
 use once_cell::sync::Lazy;
 use tokio::sync::RwLock;
 
@@ -27,13 +28,19 @@ impl Connection {
         // let sock_addr: SocketAddr = addr.parse().unwrap();
 
         if let Some(c) = self.conns.read().await.get(&addr) {
+            info!("get connection to http://{} from connection pool", addr);
             return Ok(c.to_owned());
         }
 
-        let client = data_service_client::DataServiceClient::connect(addr)
+        info!("create connection to http://{}", addr);
+
+        let client = data_service_client::DataServiceClient::connect(format!("http://{}", addr))
             .await
             .unwrap();
 
-        Ok(Arc::new(RwLock::new(client)))
+        let item = Arc::new(RwLock::new(client));
+        self.conns.write().await.insert(addr, item.clone());
+
+        Ok(item)
     }
 }

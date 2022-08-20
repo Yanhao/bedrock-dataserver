@@ -4,18 +4,17 @@ use std::path::Path;
 use anyhow::Result;
 use chrono;
 use clap::{App, Arg};
+use console_subscriber;
 use dataserver::service_pb::data_service_server::DataServiceServer;
 use fern;
 use fern::colors::{Color, ColoredLevelConfig};
 use log::{debug, error, info};
 use tokio::signal;
 use tonic::transport::Server as GrpcServer;
-use console_subscriber;
 
 use crate::config::{config_mod_init, CONFIG, CONFIG_DIR};
 use crate::format::Formatter;
 use crate::rpc_service::RealDataServer;
-
 
 // mod chunk;
 mod config;
@@ -70,7 +69,7 @@ fn setup_pid_file(path: impl AsRef<Path>) -> Result<()> {
 
 #[tokio::main]
 async fn main() {
-    console_subscriber::init();
+    // console_subscriber::init();
 
     setup_logger().unwrap();
     let default_config_file = format!("{}/{}", CONFIG_DIR, "dataserver.toml");

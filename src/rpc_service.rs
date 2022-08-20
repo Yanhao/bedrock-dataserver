@@ -1,5 +1,4 @@
 use std::net::SocketAddr;
-use std::sync::Arc;
 use std::time;
 
 use anyhow::Result;
@@ -9,8 +8,7 @@ use dataserver::service_pb::{
     TransferShardLeaderResponse,
 };
 use futures::StreamExt;
-use log::{debug, info, warn};
-use tokio::sync::RwLock;
+use log::{debug, error, info, warn};
 use tonic::{Request, Response, Status, Streaming};
 
 use dataserver::service_pb::data_service_server::DataService;
@@ -91,7 +89,7 @@ impl DataService for RealDataServer {
             return Err(Status::not_found("shard is deleted"));
         }
 
-        if fsm.read().await.is_leader().await {
+        if !fsm.read().await.is_leader().await {
             return Err(Status::unavailable("not leader"));
         }
 
@@ -107,13 +105,20 @@ impl DataService for RealDataServer {
             .await
             .unwrap();
 
+        info!("start wait result");
         match entry_notifier.wait_result().await {
             Err(shard::ShardError::NotLeader) => {
-                return Ok(Response::new(ShardWriteResponse { not_leader: true }))
+                error!("wait failed: not leader");
+                return Ok(Response::new(ShardWriteResponse { not_leader: true }));
             }
-            Err(_) => return Err(Status::internal("internal error")),
+            Err(e) => {
+                error!("wait failed: {}", e);
+
+                return Err(Status::internal("internal error"));
+            }
             Ok(_) => {}
         };
+        info!("end wait result");
 
         let shard = fsm.read().await.get_shard();
 
@@ -187,7 +192,7 @@ impl DataService for RealDataServer {
 
         let shard_id = req.get_ref().shard_id;
 
-        let fsm = match SHARD_MANAGER.read().await.get_shard_fsm(shard_id).await {
+        let fsm = match SHARD_MANAGER.write().await.load_shard_fsm(shard_id).await {
             Err(_) => {
                 warn!("no such shard, shard_id: {}", req.get_ref().shard_id);
                 return Err(Status::not_found("no such shard"));
@@ -252,9 +257,9 @@ impl DataService for RealDataServer {
         info!("shard append log entries, req: {:?}", req);
 
         let fsm = SHARD_MANAGER
-            .read()
+            .write()
             .await
-            .get_shard_fsm(req.get_ref().shard_id)
+            .load_shard_fsm(req.get_ref().shard_id)
             .await
             .unwrap();
 
@@ -310,9 +315,9 @@ impl DataService for RealDataServer {
         let last_wal_index = first_piece.last_wal_index;
 
         let fsm = SHARD_MANAGER
-            .read()
+            .write()
             .await
-            .get_shard_fsm(first_piece.shard_id)
+            .load_shard_fsm(first_piece.shard_id)
             .await
             .unwrap();
         let shard = fsm.read().await.get_shard();
@@ -356,7 +361,7 @@ impl DataService for RealDataServer {
         info!("transfer shard leader, req: {:?}", req);
 
         let shard_id = req.get_ref().shard_id;
-        let fsm = match SHARD_MANAGER.read().await.get_shard_fsm(shard_id).await {
+        let fsm = match SHARD_MANAGER.write().await.load_shard_fsm(shard_id).await {
             Err(_) => {
                 return Err(Status::not_found("no such shard"));
             }
@@ -377,6 +382,8 @@ impl DataService for RealDataServer {
             .await
             .update_leader_change_ts(req.get_ref().leader_change_ts.to_owned().unwrap().into())
             .await;
+
+        info!("successfully transfer shard leader");
 
         Ok(Response::new(TransferShardLeaderResponse {}))
     }

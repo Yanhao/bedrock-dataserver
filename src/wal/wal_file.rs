@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::slice;
 
 use anyhow::{anyhow, bail, Result};
-use log::{info, error, debug};
+use log::{debug, error, info};
 use prost::Message;
 use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
@@ -223,7 +223,11 @@ impl WalFile {
     }
 
     pub async fn load_wal_file(path: impl AsRef<Path>, is_sealed: bool) -> Result<WalFile> {
-        info!("start load wal file, path: {}, is_sealed: {}", path.as_ref().display(), is_sealed);
+        info!(
+            "start load wal file, path: {}, is_sealed: {}",
+            path.as_ref().display(),
+            is_sealed
+        );
 
         let file = match OpenOptions::new()
             .create_new(false)

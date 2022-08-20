@@ -111,7 +111,7 @@ impl OrderKeeper {
         notifier
             .lock()
             .await
-            .wait(tokio::time::Duration::from_secs(1))
+            .wait(tokio::time::Duration::from_secs(10))
             .await?;
 
         return notifier.lock().await.get_error();

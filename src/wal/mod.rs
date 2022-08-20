@@ -1,6 +1,6 @@
 mod error;
-mod wal_file;
 mod wal;
+mod wal_file;
 mod wal_trait;
 
 pub use wal::Wal;

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use futures_util::stream;
-use log::{error, info, warn, debug};
+use log::{debug, error, info, warn};
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tonic::Request;
 
@@ -124,7 +124,9 @@ impl Fsm {
 
                         info!("success_replicate_count: {}", success_replicate_count);
                         if success_replicate_count >= 0 {
-                            en.sender.send(Ok(())).await.unwrap();
+                            if let Err(e) = en.sender.send(Ok(())).await {
+                                error!("failed: {}", e);
+                            }
                         } else {
                             en.sender.send(Err(ShardError::FailedToAppendLog)).await.unwrap();
                         }
@@ -264,8 +266,12 @@ impl Fsm {
         replog: Arc<RwLock<Wal>>,
     ) -> std::result::Result<(), ShardError> {
         let shard_id = shard.read().await.get_shard_id();
-        let addr_str = addr.to_string();
-        let client = CONNECTIONS.write().await.get_conn(addr_str).await.unwrap();
+        let client = CONNECTIONS
+            .write()
+            .await
+            .get_conn(addr.clone())
+            .await
+            .unwrap();
 
         let request = Request::new(ShardAppendLogRequest {
             shard_id,
@@ -287,10 +293,13 @@ impl Fsm {
         };
 
         if resp.get_ref().is_old_leader {
+            warn!("failed to append log, not leader");
             return Err(ShardError::NotLeader);
         }
 
         let mut last_applied_index = resp.get_ref().last_applied_index;
+        info!("last_applied_index from {}, {}", addr, last_applied_index);
+
         for i in 1..=3 {
             if last_applied_index >= en.index {
                 return Ok(());

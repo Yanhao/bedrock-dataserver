@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::{bail, Result};
+use log::info;
 use once_cell::sync::Lazy;
 use tokio::sync::RwLock;
 
@@ -68,7 +69,8 @@ impl ShardManager {
         self.shard_fsms
             .write()
             .await
-            .insert(shard_id, Arc::new(RwLock::new(fsm)));
+            .insert(shard_id, Arc::new(RwLock::new(fsm)))
+            .unwrap();
 
         Ok(())
     }
