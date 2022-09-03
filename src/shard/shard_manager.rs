@@ -2,11 +2,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::{bail, Result};
-use log::{error, info};
+use log::info;
 use once_cell::sync::Lazy;
 use tokio::sync::RwLock;
 
-use crate::wal::{Wal, WalTrait};
+use crate::wal::Wal;
 
 use super::{error::ShardError, fsm::Fsm, Shard};
 
@@ -74,5 +74,83 @@ impl ShardManager {
         info!("insert shard to cache, shard id: 0x{:016x}", shard_id);
 
         Ok(())
+    }
+
+    pub async fn split_shard(&mut self, shard_id: u64, new_shard_id: u64) {
+        let fsm = self.load_shard_fsm(shard_id).await.unwrap();
+        let shard = fsm.read().await.get_shard();
+
+        let replicates = shard.read().await.get_replicates();
+        let leader = shard.read().await.get_leader();
+        let last_wal_index = shard.read().await.get_last_wal_index();
+
+        let start_key = shard.read().await.middle_key();
+        let end_key = shard.read().await.max_key();
+
+        let new_shard = Shard::create_shard_for_split(
+            new_shard_id,
+            leader,
+            replicates,
+            last_wal_index,
+            start_key.clone()..end_key.clone(),
+        )
+        .await;
+
+        Wal::create_wal_dir(shard_id).await.unwrap();
+        let new_fsm = Arc::new(RwLock::new(Fsm::new(
+            new_shard,
+            Wal::load_wal_by_shard_id(new_shard_id).await.unwrap(),
+        )));
+
+        self.shard_fsms
+            .write()
+            .await
+            .insert(new_shard_id, new_fsm.clone());
+
+        let new_shard = new_fsm.read().await.get_shard();
+
+        let iter = shard
+            .read()
+            .await
+            .create_split_iter(&start_key, &end_key)
+            .await
+            .unwrap();
+        for kv in iter.into_iter() {
+            let key = kv.0.to_owned();
+            let value = kv.1.to_owned();
+
+            new_shard.write().await.put(&key, &value).await;
+        }
+
+        shard
+            .write()
+            .await
+            .delete_range(&start_key, &end_key)
+            .await
+            .unwrap();
+
+        new_fsm.write().await.start().await.unwrap();
+    }
+
+    pub async fn merge_shard(&mut self, shard_id_a: u64, shard_id_b: u64) {
+        let fsm_a = self.load_shard_fsm(shard_id_a).await.unwrap();
+        let fsm_b = self.load_shard_fsm(shard_id_b).await.unwrap();
+
+        let shard_a = fsm_a.read().await.get_shard();
+        let shard_b = fsm_b.read().await.get_shard();
+
+        let iter = shard_b.write().await.create_snapshot_iter().await.unwrap();
+
+        for kv in iter.into_iter() {
+            let key = kv.0.to_owned();
+            let value = kv.1.to_owned();
+
+            shard_a.write().await.put(&key, &value).await.unwrap();
+        }
+
+        fsm_b.write().await.stop();
+
+        self.remove_shard_fsm(shard_id_b).await.unwrap();
+        shard_b.write().await.remove_shard().await.unwrap();
     }
 }

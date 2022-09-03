@@ -1,3 +1,4 @@
+use std::ops::Range;
 use std::str::from_utf8;
 use std::time;
 use std::vec::Vec;
@@ -6,6 +7,7 @@ use std::{collections::HashMap, net::SocketAddr};
 use anyhow::{bail, Result};
 use async_trait::async_trait;
 use log::info;
+use num_bigint::{BigUint, ToBigUint};
 use prost::Message;
 use tokio::sync::RwLock;
 use tonic::Request;
@@ -55,6 +57,9 @@ impl Shard {
 
             replicates: req.get_ref().replicates.clone(),
             last_wal_index: 0,
+
+            min_key: req.get_ref().min_key.clone(),
+            max_key: req.get_ref().max_key.clone(),
         };
 
         let mut meta_buf = Vec::new();
@@ -65,6 +70,41 @@ impl Shard {
             .unwrap();
 
         Self::new(req.get_ref().shard_id, sled_kv, meta)
+    }
+
+    pub async fn create_shard_for_split(
+        shard_id: u64,
+        leader: String,
+        replicates: Vec<SocketAddr>,
+        last_wal_index: u64,
+        key_range: Range<Vec<u8>>,
+    ) -> Self {
+        let mut sled_kv = kv_store::SledStore::create(shard_id).await.unwrap();
+
+        let meta = ShardMeta {
+            shard_id,
+            is_leader: false,
+            create_ts: Some(time::SystemTime::now().into()),
+            replicates_update_ts: Some(time::SystemTime::now().into()),
+            leader_change_ts: Some(time::SystemTime::now().into()),
+
+            leader,
+            replicates: replicates.into_iter().map(|r| r.to_string()).collect(),
+
+            last_wal_index,
+
+            min_key: key_range.start,
+            max_key: key_range.end,
+        };
+
+        let mut meta_buf = Vec::new();
+        meta.encode(&mut meta_buf).unwrap();
+        sled_kv
+            .kv_set(SHARD_META_KEY.as_bytes(), &meta_buf)
+            .await
+            .unwrap();
+
+        Self::new(shard_id, sled_kv, meta)
     }
 
     pub async fn remove_shard(&mut self) -> Result<()> {
@@ -118,6 +158,10 @@ impl Shard {
         self.shard_meta.is_leader
     }
 
+    pub fn get_leader(&self) -> String {
+        self.shard_meta.leader.clone().into()
+    }
+
     pub async fn update_leader_change_ts(&mut self, t: time::SystemTime) {
         self.shard_meta.leader_change_ts = Some(t.into());
         self.save_meta().await.unwrap();
@@ -129,6 +173,23 @@ impl Shard {
 
     pub fn get_last_wal_index(&self) -> u64 {
         self.shard_meta.last_wal_index
+    }
+
+    pub fn middle_key(&self) -> Vec<u8> {
+        let min = BigUint::from_bytes_be(&self.shard_meta.min_key);
+        let max = BigUint::from_bytes_be(&self.shard_meta.max_key);
+
+        let middle = min.clone() + (max - min) / 2.to_biguint().unwrap();
+
+        middle.to_bytes_be()
+    }
+
+    pub fn min_key(&self) -> Vec<u8> {
+        self.shard_meta.min_key.clone()
+    }
+
+    pub fn max_key(&self) -> Vec<u8> {
+        self.shard_meta.max_key.clone()
     }
 
     pub async fn save_meta(&mut self) -> Result<()> {
@@ -144,6 +205,23 @@ impl Shard {
             .unwrap();
 
         Ok(())
+    }
+
+    pub async fn create_split_iter(
+        &self,
+        start_key: &[u8],
+        end_key: &[u8],
+    ) -> Result<impl Iterator<Item = (Vec<u8>, Vec<u8>)>> {
+        Ok(kv_store::StoreIter {
+            iter: self
+                .kv_store
+                .as_ref()
+                .unwrap()
+                .read()
+                .await
+                .db
+                .range(start_key..end_key),
+        })
     }
 
     pub async fn create_snapshot_iter(&self) -> Result<impl Iterator<Item = (Vec<u8>, Vec<u8>)>> {
@@ -204,6 +282,19 @@ impl Shard {
         // );
 
         Ok(value.to_vec())
+    }
+
+    pub async fn delete_range(&self, start_key: &[u8], end_key: &[u8]) -> Result<()> {
+        self.kv_store
+            .as_ref()
+            .unwrap()
+            .write()
+            .await
+            .kv_delete_range(start_key, end_key)
+            .await
+            .unwrap();
+
+        Ok(())
     }
 }
 

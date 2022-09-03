@@ -3,21 +3,23 @@ use std::time;
 
 use anyhow::Result;
 use dataserver::replog_pb::{self, Entry};
-use dataserver::service_pb::{
-    ShardInstallSnapshotRequest, ShardInstallSnapshotResponse, TransferShardLeaderRequest,
-    TransferShardLeaderResponse,
-};
 use futures::StreamExt;
+use futures_util::stream;
 use log::{debug, error, info, warn};
 use tonic::{Request, Response, Status, Streaming};
 
 use dataserver::service_pb::data_service_server::DataService;
+use dataserver::service_pb::migrate_shard_request;
 use dataserver::service_pb::{
-    CreateShardRequest, CreateShardResponse, DeleteShardRequest, ShardAppendLogRequest,
-    ShardAppendLogResponse, ShardInfoRequest, ShardInfoResponse, ShardReadRequest,
-    ShardReadResponse, ShardWriteRequest, ShardWriteResponse,
+    CreateShardRequest, CreateShardResponse, DeleteShardRequest, MergeShardRequest,
+    MergeShardResponse, MigrateShardRequest, MigrateShardResponse, ShardAppendLogRequest,
+    ShardAppendLogResponse, ShardInfoRequest, ShardInfoResponse, ShardInstallSnapshotRequest,
+    ShardInstallSnapshotResponse, ShardReadRequest, ShardReadResponse, ShardWriteRequest,
+    ShardWriteResponse, SplitShardRequest, SplitShardResponse, TransferShardLeaderRequest,
+    TransferShardLeaderResponse,
 };
 
+use crate::connections::CONNECTIONS;
 use crate::param_check;
 use crate::shard::{self, Fsm, SHARD_MANAGER};
 use crate::wal::Wal;
@@ -386,5 +388,145 @@ impl DataService for RealDataServer {
         info!("successfully transfer shard leader");
 
         Ok(Response::new(TransferShardLeaderResponse {}))
+    }
+
+    async fn split_shard(
+        &self,
+        req: tonic::Request<SplitShardRequest>,
+    ) -> Result<tonic::Response<SplitShardResponse>, tonic::Status> {
+        if !param_check::split_shard_param_check(req.get_ref()) {
+            return Err(Status::invalid_argument(""));
+        }
+
+        SHARD_MANAGER
+            .write()
+            .await
+            .split_shard(req.get_ref().shard_id, req.get_ref().new_shard_id)
+            .await;
+
+        info!(
+            "split shard successfully, shard_id: {}, new_shard_id: {}",
+            req.get_ref().shard_id,
+            req.get_ref().new_shard_id
+        );
+
+        Ok(Response::new(SplitShardResponse {}))
+    }
+
+    async fn merge_shard(
+        &self,
+        req: tonic::Request<MergeShardRequest>,
+    ) -> Result<tonic::Response<MergeShardResponse>, tonic::Status> {
+        if !param_check::merge_shard_param_check(req.get_ref()) {
+            return Err(Status::invalid_argument(""));
+        }
+
+        let shard_id_a = req.get_ref().shard_id_a;
+        let shard_id_b = req.get_ref().shard_id_b;
+
+        SHARD_MANAGER
+            .write()
+            .await
+            .merge_shard(shard_id_a, shard_id_b)
+            .await;
+
+        Ok(Response::new(MergeShardResponse {}))
+    }
+
+    async fn migrate_shard(
+        &self,
+        req: tonic::Request<Streaming<MigrateShardRequest>>,
+    ) -> Result<tonic::Response<MigrateShardResponse>, tonic::Status> {
+        let mut in_stream = req.into_inner();
+        let first = in_stream.next().await.unwrap().unwrap();
+
+        if first.direction == migrate_shard_request::Direction::From as i32 {
+            let fsm = match SHARD_MANAGER
+                .write()
+                .await
+                .load_shard_fsm(first.shard_id_from)
+                .await
+            {
+                Err(_) => {
+                    return Err(Status::not_found("no such shard"));
+                }
+                Ok(s) => s,
+            };
+            let shard = fsm.read().await.get_shard();
+            let snap = shard.read().await.create_snapshot_iter().await.unwrap();
+
+            let client = CONNECTIONS
+                .write()
+                .await
+                .get_conn(first.target_address)
+                .await
+                .unwrap();
+
+            let mut req_stream = vec![MigrateShardRequest {
+                shard_id_from: first.shard_id_from,
+                shard_id_to: first.shard_id_to,
+                direction: migrate_shard_request::Direction::To as i32,
+                target_address: "".to_string(),
+                entries: vec![],
+            }];
+            for kv in snap.into_iter() {
+                req_stream.push(MigrateShardRequest {
+                    shard_id_from: first.shard_id_from,
+                    shard_id_to: first.shard_id_to,
+                    direction: migrate_shard_request::Direction::To as i32,
+                    target_address: "".to_string(),
+                    entries: vec![migrate_shard_request::Entry {
+                        key: kv.0.to_owned(),
+                        value: kv.1.to_owned(),
+                    }],
+                })
+            }
+
+            client
+                .write()
+                .await
+                .migrate_shard(Request::new(stream::iter(req_stream)))
+                .await
+                .unwrap();
+
+            fsm.write().await.stop().await;
+            shard.write().await.remove_shard().await.unwrap();
+
+            return Ok(Response::new(MigrateShardResponse {}));
+        }
+
+        if first.direction == migrate_shard_request::Direction::To as i32 {
+            while let Some(result) = in_stream.next().await {
+                if let Err(_) = result {
+                    break;
+                }
+
+                let piece = result.unwrap();
+                if !param_check::migrate_shard_param_check(&piece) {
+                    return Err(Status::invalid_argument(""));
+                }
+
+                let fsm = match SHARD_MANAGER
+                    .write()
+                    .await
+                    .load_shard_fsm(first.shard_id_to)
+                    .await
+                {
+                    Err(_) => {
+                        return Err(Status::not_found("no such shard"));
+                    }
+                    Ok(s) => s,
+                };
+                let shard = fsm.read().await.get_shard();
+
+                for kv in piece.entries.into_iter() {
+                    shard.write().await.put(&kv.key, &kv.value).await.unwrap();
+                }
+            }
+
+            return Ok(Response::new(MigrateShardResponse {}));
+        }
+
+        return Err(Status::invalid_argument(""));
     }
 }

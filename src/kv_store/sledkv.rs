@@ -77,6 +77,21 @@ impl SledStore {
         self.db.insert(key, value);
         Ok(())
     }
+
+    pub async fn kv_delete_range(&mut self, start_key: &[u8], end_key: &[u8]) -> Result<()> {
+        let start_key: Vec<u8> = start_key.into();
+
+        loop {
+            let (key, value) = self.db.pop_max().unwrap().unwrap();
+            let key: Vec<u8> = key.as_ref().to_owned();
+            if key < start_key {
+                self.db.insert(key, value);
+                break;
+            }
+        }
+
+        Ok(())
+    }
 }
 
 pub struct StoreIter {
@@ -118,5 +133,15 @@ impl SledStore {
         self.kv_set(&key, &value).await.unwrap();
 
         Ok(())
+    }
+
+    pub async fn create_split_iter(
+        &self,
+        start_key: &[u8],
+        end_key: &[u8],
+    ) -> Result<impl Iterator<Item = (Vec<u8>, Vec<u8>)>> {
+        Ok(StoreIter {
+            iter: self.db.range(start_key..end_key),
+        })
     }
 }
