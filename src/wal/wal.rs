@@ -6,12 +6,12 @@ use async_trait::async_trait;
 use log::{debug, error, info};
 use tokio::fs::{create_dir_all, remove_dir_all};
 
+use dataserver::replog_pb::Entry;
+
 use crate::config::CONFIG;
 
 use super::error::WalError;
 use super::{wal_file, WalTrait};
-
-use dataserver::replog_pb::Entry;
 
 const MAX_ENTRY_COUNT: u64 = 100;
 

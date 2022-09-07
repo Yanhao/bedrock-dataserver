@@ -1,8 +1,6 @@
+use std::fs::{read_to_string, OpenOptions};
 use std::io::Write;
-use std::{
-    fs::{read_to_string, OpenOptions},
-    sync::RwLock,
-};
+use std::sync::RwLock;
 
 use anyhow::Result;
 use log::debug;

@@ -7,7 +7,8 @@ use tokio::{select, sync::mpsc};
 
 use dataserver::metaserver_pb::{meta_service_client, HeartBeatRequest};
 
-use crate::{config::get_self_socket_addr, metadata::METADATA};
+use crate::config::get_self_socket_addr;
+use crate::metadata::METADATA;
 
 pub static HEART_BEATER: Lazy<RwLock<HeartBeater>> = Lazy::new(|| Default::default());
 

@@ -5,12 +5,13 @@ use anyhow::Result;
 use chrono;
 use clap::{App, Arg};
 use console_subscriber;
-use dataserver::service_pb::data_service_server::DataServiceServer;
 use fern;
 use fern::colors::{Color, ColoredLevelConfig};
 use log::{debug, error, info};
 use tokio::signal;
 use tonic::transport::Server as GrpcServer;
+
+use dataserver::service_pb::data_service_server::DataServiceServer;
 
 use crate::config::{config_mod_init, CONFIG, CONFIG_DIR};
 use crate::format::Formatter;

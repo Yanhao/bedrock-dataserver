@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Result};
+use anyhow::{ensure, Result};
 // use rocksdb::{Options, DB};
 
 // use crate::meta::MetaData;
@@ -14,13 +14,8 @@ pub struct Formatter {
 
 impl Formatter {
     pub fn new(p: impl AsRef<Path>) -> Result<Self> {
-        if !p.as_ref().exists() {
-            bail!(DataServerError::PathNotExists);
-        }
-
-        if !p.as_ref().is_dir() {
-            bail!(DataServerError::IsDir);
-        }
+        ensure!(p.as_ref().exists(), DataServerError::PathNotExists);
+        ensure!(p.as_ref().is_dir(), DataServerError::IsDir);
 
         Ok(Self {
             directory: p.as_ref().to_path_buf(),

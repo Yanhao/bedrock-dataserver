@@ -1,12 +1,13 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
+use std::sync::Arc;
 
 use anyhow::Result;
-use log::{debug, error, info};
+use log::info;
 use once_cell::sync::Lazy;
 use tokio::sync::RwLock;
+use tonic::transport::Channel;
 
 use dataserver::service_pb::data_service_client;
-use tonic::transport::Channel;
 
 pub static CONNECTIONS: Lazy<RwLock<Connection>> = Lazy::new(|| RwLock::new(Connection::new()));
 

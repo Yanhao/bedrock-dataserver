@@ -1,11 +1,9 @@
+use std::net::SocketAddr;
 use std::ops::Range;
-use std::str::from_utf8;
 use std::time;
 use std::vec::Vec;
-use std::{collections::HashMap, net::SocketAddr};
 
 use anyhow::{bail, Result};
-use async_trait::async_trait;
 use log::info;
 use num_bigint::{BigUint, ToBigUint};
 use prost::Message;
@@ -14,7 +12,6 @@ use tonic::Request;
 
 use crate::kv_store::{self, SledStore};
 use crate::shard::error;
-use crate::shard::snapshoter::SnapShoter;
 
 use dataserver::service_pb::CreateShardRequest;
 use dataserver::service_pb::ShardMeta;

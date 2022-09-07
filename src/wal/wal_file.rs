@@ -8,9 +8,9 @@ use prost::Message;
 use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
-use super::error::WalError;
-
 use dataserver::replog_pb::Entry;
+
+use crate::wal::error::WalError;
 
 const MAX_META_COUNT: u64 = 10;
 const WAL_MAGIC: u64 = 0x12345;
