@@ -45,6 +45,7 @@ impl HeartBeater {
 
                         let req = tonic::Request::new(HeartBeatRequest{
                             addr: get_self_socket_addr().to_string(),
+                            restarting: false,
                         });
 
                         match client.heart_beat(req).await {

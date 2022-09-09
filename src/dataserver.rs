@@ -29,6 +29,7 @@ mod metadata;
 mod param_check;
 mod rpc_service;
 mod shard;
+mod sync_shard;
 mod wal;
 
 fn setup_logger() -> Result<()> {
@@ -183,6 +184,13 @@ async fn main() {
     // });
 
     heartbeat::HEART_BEATER
+        .write()
+        .unwrap()
+        .start()
+        .await
+        .unwrap();
+
+    sync_shard::SHARD_SYNCER
         .write()
         .unwrap()
         .start()

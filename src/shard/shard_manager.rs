@@ -148,7 +148,7 @@ impl ShardManager {
             shard_a.write().await.put(&key, &value).await.unwrap();
         }
 
-        fsm_b.write().await.stop();
+        fsm_b.write().await.stop().await;
 
         self.remove_shard_fsm(shard_id_b).await.unwrap();
         shard_b.write().await.remove_shard().await.unwrap();
