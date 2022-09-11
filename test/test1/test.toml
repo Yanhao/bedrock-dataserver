@@ -1,0 +1,4 @@
+raft_server_addr = "0.0.0.0:1000"
+work_directory = "."
+rpc_server_addr = "0.0.0.0:3381"
+wal_directory = "./wal"

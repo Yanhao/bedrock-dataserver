@@ -1,0 +1,7 @@
+{
+    "cluster_name": "test-cluster",
+    "metaserver_addrs": [],
+    "metaserver_addrs_update_ts" :"",
+    "metaserver_leader" : "http://127.0.0.1:1081",
+    "metaserver_leader_update_ts": ""
+}
