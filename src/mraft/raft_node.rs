@@ -64,6 +64,10 @@ impl RaftNode {
     //     Ok(())
     // }
 
+    pub fn receive(&self, msg: Message) -> Result<()> {
+        todo!()
+    }
+
     pub fn propose(&self, data: Vec<u8>) -> Result<()> {
         // TODO: write this into wal first
         // TODO: recreate real data and send it with self.propose_v
@@ -177,7 +181,16 @@ impl RaftNode {
     }
 
     async fn handle_normal(&self, entry: &Entry) -> Result<()> {
-        todo!()
+        let ctx = RaftContext::decode(&entry.context[..]).unwrap();
+        // TODO: commit journal entry
+
+        RESPONSE_WAITERS
+            .write()
+            .unwrap()
+            .get(&ctx.msg_id)
+            .unwrap()
+            .send(Ok(()));
+        Ok(())
     }
 
     async fn handle_conf_change(&self, entry: &Entry) -> Result<()> {
