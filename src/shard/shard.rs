@@ -17,6 +17,7 @@ use dataserver::service_pb::CreateShardRequest;
 use dataserver::service_pb::ShardMeta;
 
 const SHARD_META_KEY: &'static str = "shard_meta";
+const KV_RANGE_LIMIT: i32 = 256;
 
 pub struct Shard {
     shard_id: u64,
@@ -189,6 +190,15 @@ impl Shard {
         self.shard_meta.max_key.clone()
     }
 
+    pub fn is_key_within_shard(&self, key: &[u8]) -> bool {
+        let min = BigUint::from_bytes_be(&self.shard_meta.min_key);
+        let max = BigUint::from_bytes_be(&self.shard_meta.max_key);
+
+        let key = BigUint::from_bytes_be(key);
+
+        return min <= key && key < max;
+    }
+
     pub async fn save_meta(&mut self) -> Result<()> {
         let mut meta_buf = Vec::new();
         self.shard_meta.encode(&mut meta_buf).unwrap();
@@ -279,6 +289,16 @@ impl Shard {
         // );
 
         Ok(value.to_vec())
+    }
+
+    pub async fn scan(&self, start_key: &[u8], end_key: &[u8]) -> Result<Vec<kv_store::KeyValue>> {
+        self.kv_store
+            .as_ref()
+            .unwrap()
+            .write()
+            .await
+            .kv_scan(start_key, end_key, KV_RANGE_LIMIT)
+            .await
     }
 
     pub async fn delete_range(&self, start_key: &[u8], end_key: &[u8]) -> Result<()> {

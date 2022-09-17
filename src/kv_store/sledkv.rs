@@ -15,6 +15,11 @@ pub struct SledStore {
     pub db: sled::Db,
 }
 
+pub struct KeyValue {
+    pub key: Vec<u8>,
+    pub value: Vec<u8>,
+}
+
 impl SledStore {
     fn store_path(shard_id: u64) -> PathBuf {
         let wal_dir: PathBuf = CONFIG
@@ -76,6 +81,34 @@ impl SledStore {
     pub async fn kv_set(&mut self, key: &[u8], value: &[u8]) -> Result<()> {
         self.db.insert(key, value);
         Ok(())
+    }
+
+    pub async fn kv_scan(
+        &mut self,
+        start_key: &[u8],
+        end_key: &[u8],
+        limit: i32,
+    ) -> Result<Vec<KeyValue>> {
+        let iter = self.db.range(start_key..end_key);
+
+        let mut kvs = vec![];
+        let mut count = 0;
+        for kv in iter {
+            if count >= limit {
+                break;
+            }
+
+            let kv = kv.unwrap();
+
+            kvs.push(KeyValue {
+                key: kv.0.as_ref().to_owned(),
+                value: kv.1.as_ref().to_owned(),
+            });
+
+            count += 1;
+        }
+
+        Ok(kvs)
     }
 
     pub async fn kv_delete_range(&mut self, start_key: &[u8], end_key: &[u8]) -> Result<()> {

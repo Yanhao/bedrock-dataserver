@@ -1,4 +1,5 @@
 mod error;
 mod sledkv;
 
-pub use sledkv::{SledStore, StoreIter};
+pub use sledkv::{SledStore, StoreIter, KeyValue};
+

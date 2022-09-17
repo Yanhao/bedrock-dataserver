@@ -11,12 +11,12 @@ use dataserver::replog_pb::{self, Entry};
 use dataserver::service_pb::data_service_server::DataService;
 use dataserver::service_pb::migrate_shard_request;
 use dataserver::service_pb::{
-    CreateShardRequest, CreateShardResponse, DeleteShardRequest, MergeShardRequest,
+    CreateShardRequest, CreateShardResponse, DeleteShardRequest, KeyValue, MergeShardRequest,
     MergeShardResponse, MigrateShardRequest, MigrateShardResponse, ShardAppendLogRequest,
     ShardAppendLogResponse, ShardInfoRequest, ShardInfoResponse, ShardInstallSnapshotRequest,
-    ShardInstallSnapshotResponse, ShardReadRequest, ShardReadResponse, ShardWriteRequest,
-    ShardWriteResponse, SplitShardRequest, SplitShardResponse, TransferShardLeaderRequest,
-    TransferShardLeaderResponse,
+    ShardInstallSnapshotResponse, ShardReadRequest, ShardReadResponse, ShardScanRequest,
+    ShardScanResponse, ShardWriteRequest, ShardWriteResponse, SplitShardRequest,
+    SplitShardResponse, TransferShardLeaderRequest, TransferShardLeaderResponse,
 };
 
 use crate::connections::CONNECTIONS;
@@ -133,6 +133,67 @@ impl DataService for RealDataServer {
             .map_err(|_| Status::internal("internal error"))?;
 
         return Ok(Response::new(ShardWriteResponse { not_leader: false }));
+    }
+
+    async fn shard_scan(
+        &self,
+        req: tonic::Request<ShardScanRequest>,
+    ) -> Result<tonic::Response<ShardScanResponse>, tonic::Status> {
+        if !param_check::shard_scan_param_check(req.get_ref()) {
+            return Err(Status::invalid_argument(""));
+        }
+
+        let shard_id = req.get_ref().shard_id;
+        let fsm = SHARD_MANAGER
+            .write()
+            .await
+            .load_shard_fsm(shard_id)
+            .await
+            .map_err(|_| Status::not_found("no such shard"))?;
+
+        if fsm.read().await.is_deleting() {
+            return Err(Status::not_found("shard is deleted"));
+        }
+
+        if fsm.read().await.is_installing_snapshot() {
+            return Err(Status::not_found("shard is repairing"));
+        }
+
+        let shard = fsm.read().await.get_shard();
+
+        if shard
+            .read()
+            .await
+            .is_key_within_shard(&req.get_ref().start_key)
+        {
+            return Err(Status::invalid_argument(""));
+        }
+
+        let kvs = shard
+            .write()
+            .await
+            .scan(&req.get_ref().start_key, &req.get_ref().end_key)
+            .await
+            .unwrap();
+
+        return Ok(Response::new(ShardScanResponse {
+            kvs: kvs
+                .iter()
+                .map(|kv| KeyValue {
+                    key: kv.key.clone(),
+                    value: kv.value.clone(),
+                })
+                .collect(),
+            no_left: shard
+                .read()
+                .await
+                .is_key_within_shard(&req.get_ref().start_key)
+                && shard
+                    .read()
+                    .await
+                    .is_key_within_shard(&req.get_ref().end_key)
+                && kvs.len() == 0,
+        }));
     }
 
     async fn create_shard(
