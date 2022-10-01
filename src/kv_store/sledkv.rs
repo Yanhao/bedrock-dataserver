@@ -2,7 +2,6 @@ use std::iter::Iterator;
 use std::path::PathBuf;
 
 use anyhow::{bail, Result};
-use async_trait::async_trait;
 use log::{debug, info};
 use sled;
 use tokio::fs::remove_dir_all;
@@ -115,10 +114,10 @@ impl SledStore {
         let start_key: Vec<u8> = start_key.into();
 
         loop {
-            let (key, value) = self.db.pop_max().unwrap().unwrap();
+            let (key, _) = self.db.pop_max().unwrap().unwrap();
             let key: Vec<u8> = key.as_ref().to_owned();
             if key < start_key {
-                self.db.insert(key, value);
+                self.db.remove(key);
                 break;
             }
         }

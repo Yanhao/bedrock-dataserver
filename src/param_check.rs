@@ -5,7 +5,7 @@ use log::warn;
 use dataserver::service_pb::{
     CreateShardRequest, DeleteShardRequest, MergeShardRequest, MigrateShardRequest,
     ShardAppendLogRequest, ShardInfoRequest, ShardInstallSnapshotRequest, ShardReadRequest,
-    ShardScanRequest, ShardWriteRequest, SplitShardRequest, TransferShardLeaderRequest,
+    ShardScanRequest, ShardWriteRequest, SplitShardRequest, TransferShardLeaderRequest, LockRecordRequest, LockRangeRequest,
 };
 
 pub fn shard_read_param_check(req: &ShardReadRequest) -> bool {
@@ -75,5 +75,13 @@ pub fn merge_shard_param_check(req: &MergeShardRequest) -> bool {
 }
 
 pub fn migrate_shard_param_check(req: &MigrateShardRequest) -> bool {
+    return true;
+}
+
+pub fn lock_record_param_check(req: &LockRecordRequest) -> bool {
+    return true;
+}
+
+pub fn lock_range_param_check(req: &LockRangeRequest) -> bool {
     return true;
 }

@@ -9,14 +9,16 @@ use tonic::{Request, Response, Status, Streaming};
 
 use dataserver::replog_pb::{self, Entry};
 use dataserver::service_pb::data_service_server::DataService;
-use dataserver::service_pb::migrate_shard_request;
 use dataserver::service_pb::{
-    CreateShardRequest, CreateShardResponse, DeleteShardRequest, KeyValue, MergeShardRequest,
-    MergeShardResponse, MigrateShardRequest, MigrateShardResponse, ShardAppendLogRequest,
-    ShardAppendLogResponse, ShardInfoRequest, ShardInfoResponse, ShardInstallSnapshotRequest,
-    ShardInstallSnapshotResponse, ShardReadRequest, ShardReadResponse, ShardScanRequest,
-    ShardScanResponse, ShardWriteRequest, ShardWriteResponse, SplitShardRequest,
-    SplitShardResponse, TransferShardLeaderRequest, TransferShardLeaderResponse,
+    migrate_shard_request, CancelTxRequest, CancelTxResponse, CommitTxRequest, CommitTxResponse,
+    CreateShardRequest, CreateShardResponse, DeleteShardRequest, KeyValue, LockRangeRequest,
+    LockRangeResponse, LockRecordRequest, LockRecordResponse, MergeShardRequest,
+    MergeShardResponse, MigrateShardRequest, MigrateShardResponse, PrepareTxRequest,
+    PrepareTxResponse, ShardAppendLogRequest, ShardAppendLogResponse, ShardInfoRequest,
+    ShardInfoResponse, ShardInstallSnapshotRequest, ShardInstallSnapshotResponse, ShardReadRequest,
+    ShardReadResponse, ShardScanRequest, ShardScanResponse, ShardWriteRequest, ShardWriteResponse,
+    SplitShardRequest, SplitShardResponse, StartTxRequest, StartTxResponse,
+    TransferShardLeaderRequest, TransferShardLeaderResponse,
 };
 
 use crate::connections::CONNECTIONS;
@@ -602,5 +604,66 @@ impl DataService for RealDataServer {
         }
 
         return Err(Status::invalid_argument(""));
+    }
+
+    async fn start_tx(
+        &self,
+        req: tonic::Request<StartTxRequest>,
+    ) -> Result<tonic::Response<StartTxResponse>, tonic::Status> {
+        todo!()
+    }
+
+    async fn lock_record(
+        &self,
+        req: tonic::Request<LockRecordRequest>,
+    ) -> Result<tonic::Response<LockRecordResponse>, tonic::Status> {
+        if !param_check::lock_record_param_check(req.get_ref()) {
+            return Err(Status::invalid_argument(""));
+        }
+
+        let shard_id = req.get_ref().shard_id;
+        let fsm = SHARD_MANAGER
+            .write()
+            .await
+            .load_shard_fsm(shard_id)
+            .await
+            .map_err(|_| Status::not_found("no such shard"))?;
+
+        let shard = fsm.read().await.get_shard();
+
+        // let res = shard.read().await.get(req.get_ref().key.as_ref());
+        // if let Ok(_) = res {
+
+        // }
+
+        return Ok(Response::new(LockRecordResponse {}));
+    }
+
+    async fn lock_range(
+        &self,
+        req: tonic::Request<LockRangeRequest>,
+    ) -> Result<tonic::Response<LockRangeResponse>, tonic::Status> {
+        todo!()
+    }
+
+    async fn prepare_tx(
+        &self,
+        req: tonic::Request<PrepareTxRequest>,
+    ) -> Result<tonic::Response<PrepareTxResponse>, tonic::Status> {
+        todo!()
+    }
+
+    async fn commit_tx(
+        &self,
+        req: tonic::Request<CommitTxRequest>,
+    ) -> Result<tonic::Response<CommitTxResponse>, tonic::Status> {
+        todo!()
+    }
+
+    async fn cancel_tx(
+        &self,
+        req: tonic::Request<CancelTxRequest>,
+    ) -> Result<tonic::Response<CancelTxResponse>, tonic::Status> {
+        todo!()
     }
 }
