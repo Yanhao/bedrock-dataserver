@@ -3,9 +3,10 @@ use std::net::{AddrParseError, SocketAddr};
 use log::warn;
 
 use dataserver::service_pb::{
-    CreateShardRequest, DeleteShardRequest, MergeShardRequest, MigrateShardRequest,
-    ShardAppendLogRequest, ShardInfoRequest, ShardInstallSnapshotRequest, ShardReadRequest,
-    ShardScanRequest, ShardWriteRequest, SplitShardRequest, TransferShardLeaderRequest, LockRecordRequest, LockRangeRequest,
+    CreateShardRequest, DeleteShardRequest, LockRangeRequest, LockRecordRequest, MergeShardRequest,
+    MigrateShardRequest, ShardAppendLogRequest, ShardInfoRequest, ShardInstallSnapshotRequest,
+    ShardReadRequest, ShardScanRequest, ShardWriteRequest, SplitShardRequest,
+    TransferShardLeaderRequest,
 };
 
 pub fn shard_read_param_check(req: &ShardReadRequest) -> bool {

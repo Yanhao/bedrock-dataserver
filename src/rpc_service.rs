@@ -139,8 +139,8 @@ impl DataService for RealDataServer {
 
     async fn shard_scan(
         &self,
-        req: tonic::Request<ShardScanRequest>,
-    ) -> Result<tonic::Response<ShardScanResponse>, tonic::Status> {
+        req: Request<ShardScanRequest>,
+    ) -> Result<Response<ShardScanResponse>, Status> {
         if !param_check::shard_scan_param_check(req.get_ref()) {
             return Err(Status::invalid_argument(""));
         }
@@ -468,8 +468,8 @@ impl DataService for RealDataServer {
 
     async fn split_shard(
         &self,
-        req: tonic::Request<SplitShardRequest>,
-    ) -> Result<tonic::Response<SplitShardResponse>, tonic::Status> {
+        req: Request<SplitShardRequest>,
+    ) -> Result<Response<SplitShardResponse>, Status> {
         if !param_check::split_shard_param_check(req.get_ref()) {
             return Err(Status::invalid_argument(""));
         }
@@ -491,8 +491,8 @@ impl DataService for RealDataServer {
 
     async fn merge_shard(
         &self,
-        req: tonic::Request<MergeShardRequest>,
-    ) -> Result<tonic::Response<MergeShardResponse>, tonic::Status> {
+        req: Request<MergeShardRequest>,
+    ) -> Result<Response<MergeShardResponse>, Status> {
         if !param_check::merge_shard_param_check(req.get_ref()) {
             return Err(Status::invalid_argument(""));
         }
@@ -511,8 +511,8 @@ impl DataService for RealDataServer {
 
     async fn migrate_shard(
         &self,
-        req: tonic::Request<Streaming<MigrateShardRequest>>,
-    ) -> Result<tonic::Response<MigrateShardResponse>, tonic::Status> {
+        req: Request<Streaming<MigrateShardRequest>>,
+    ) -> Result<Response<MigrateShardResponse>, Status> {
         let mut in_stream = req.into_inner();
         let first = in_stream.next().await.unwrap().unwrap();
 
@@ -608,15 +608,15 @@ impl DataService for RealDataServer {
 
     async fn start_tx(
         &self,
-        req: tonic::Request<StartTxRequest>,
-    ) -> Result<tonic::Response<StartTxResponse>, tonic::Status> {
+        req: Request<StartTxRequest>,
+    ) -> Result<Response<StartTxResponse>, Status> {
         todo!()
     }
 
     async fn lock_record(
         &self,
-        req: tonic::Request<LockRecordRequest>,
-    ) -> Result<tonic::Response<LockRecordResponse>, tonic::Status> {
+        req: Request<LockRecordRequest>,
+    ) -> Result<Response<LockRecordResponse>, Status> {
         if !param_check::lock_record_param_check(req.get_ref()) {
             return Err(Status::invalid_argument(""));
         }
@@ -641,29 +641,29 @@ impl DataService for RealDataServer {
 
     async fn lock_range(
         &self,
-        req: tonic::Request<LockRangeRequest>,
-    ) -> Result<tonic::Response<LockRangeResponse>, tonic::Status> {
+        req: Request<LockRangeRequest>,
+    ) -> Result<Response<LockRangeResponse>, Status> {
         todo!()
     }
 
     async fn prepare_tx(
         &self,
-        req: tonic::Request<PrepareTxRequest>,
-    ) -> Result<tonic::Response<PrepareTxResponse>, tonic::Status> {
+        req: Request<PrepareTxRequest>,
+    ) -> Result<Response<PrepareTxResponse>, Status> {
         todo!()
     }
 
     async fn commit_tx(
         &self,
-        req: tonic::Request<CommitTxRequest>,
-    ) -> Result<tonic::Response<CommitTxResponse>, tonic::Status> {
+        req: Request<CommitTxRequest>,
+    ) -> Result<Response<CommitTxResponse>, Status> {
         todo!()
     }
 
     async fn cancel_tx(
         &self,
-        req: tonic::Request<CancelTxRequest>,
-    ) -> Result<tonic::Response<CancelTxResponse>, tonic::Status> {
+        req: Request<CancelTxRequest>,
+    ) -> Result<Response<CancelTxResponse>, Status> {
         todo!()
     }
 }
