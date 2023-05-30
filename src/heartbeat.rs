@@ -5,7 +5,7 @@ use log::{info, warn};
 use once_cell::sync::Lazy;
 use tokio::{select, sync::mpsc};
 
-use dataserver::metaserver_pb::{meta_service_client, HeartBeatRequest};
+use crate::metaserver_pb::{meta_service_client, HeartBeatRequest};
 
 use crate::config::get_self_socket_addr;
 use crate::metadata::METADATA;

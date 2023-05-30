@@ -41,9 +41,9 @@ num-bigint = "0.4.3"
 prost-build = "0.7"
 tonic-build = "0.4"
 
-[[bin]]
-name = "dataserver"
-path = "src/dataserver.rs"
+# [[bin]]
+# name = "dataserver"
+# path = "src/dataserver.rs"
 
 #[[bin]]
 #name = "dscli"

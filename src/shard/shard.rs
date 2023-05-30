@@ -11,10 +11,9 @@ use tokio::sync::RwLock;
 use tonic::Request;
 
 use crate::kv_store::{self, SledStore};
+use crate::service_pb::CreateShardRequest;
+use crate::service_pb::ShardMeta;
 use crate::shard::error;
-
-use dataserver::service_pb::CreateShardRequest;
-use dataserver::service_pb::ShardMeta;
 
 const SHARD_META_KEY: &'static str = "shard_meta";
 const KV_RANGE_LIMIT: i32 = 256;

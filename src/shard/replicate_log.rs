@@ -1,10 +1,10 @@
 use anyhow::{bail, Result};
 
-use dataserver::replog_pb::Entry;
 use log::warn;
 use prost::Message;
 
 use super::error::ShardError;
+use crate::replog_pb::Entry;
 
 pub struct ReplicateLog {
     ents: Vec<Entry>,

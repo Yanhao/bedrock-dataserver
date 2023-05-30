@@ -8,7 +8,7 @@ use prost::Message;
 use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
-use dataserver::replog_pb::Entry;
+use crate::replog_pb::Entry;
 
 use crate::wal::error::WalError;
 

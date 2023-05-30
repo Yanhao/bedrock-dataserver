@@ -18,3 +18,18 @@ pub mod metaserver_pb {
 pub mod replog_pb {
     include!(concat!(env!("OUT_DIR"), "/replog_pb.rs"));
 }
+
+// mod chunk;
+pub mod config;
+pub mod error;
+pub mod format;
+pub mod heartbeat;
+// mod journal;
+pub mod connections;
+pub mod kv_store;
+pub mod metadata;
+pub mod param_check;
+pub mod rpc_service;
+pub mod shard;
+pub mod sync_shard;
+pub mod wal;

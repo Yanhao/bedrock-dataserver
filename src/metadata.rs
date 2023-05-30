@@ -10,7 +10,7 @@ use prost::Message;
 use serde::{Deserialize, Serialize};
 use sled;
 
-use dataserver::service_pb::ShardMeta;
+use crate::service_pb::ShardMeta;
 
 const METADATA_PATH: &str = "metadata.json";
 const METADATA_DIRECTORY: &str = "metadata";

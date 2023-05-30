@@ -11,26 +11,12 @@ use log::{debug, error, info};
 use tokio::signal;
 use tonic::transport::Server as GrpcServer;
 
+use dataserver::config::{config_mod_init, CONFIG, CONFIG_DIR};
+use dataserver::format::Formatter;
+use dataserver::rpc_service::RealDataServer;
 use dataserver::service_pb::data_service_server::DataServiceServer;
-
-use crate::config::{config_mod_init, CONFIG, CONFIG_DIR};
-use crate::format::Formatter;
-use crate::rpc_service::RealDataServer;
-
-// mod chunk;
-mod config;
-mod error;
-mod format;
-mod heartbeat;
-// mod journal;
-mod connections;
-mod kv_store;
-mod metadata;
-mod param_check;
-mod rpc_service;
-mod shard;
-mod sync_shard;
-mod wal;
+use dataserver::heartbeat;
+use dataserver::sync_shard;
 
 fn setup_logger() -> Result<()> {
     let color = ColoredLevelConfig::new()

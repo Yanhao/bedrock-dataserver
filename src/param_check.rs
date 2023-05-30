@@ -2,7 +2,7 @@ use std::net::{AddrParseError, SocketAddr};
 
 use log::warn;
 
-use dataserver::service_pb::{
+use crate::service_pb::{
     CreateShardRequest, DeleteShardRequest, LockRangeRequest, LockRecordRequest, MergeShardRequest,
     MigrateShardRequest, ShardAppendLogRequest, ShardInfoRequest, ShardInstallSnapshotRequest,
     ShardReadRequest, ShardScanRequest, ShardWriteRequest, SplitShardRequest,

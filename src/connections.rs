@@ -7,7 +7,7 @@ use once_cell::sync::Lazy;
 use tokio::sync::RwLock;
 use tonic::transport::Channel;
 
-use dataserver::service_pb::data_service_client;
+use crate::service_pb::data_service_client;
 
 pub static CONNECTIONS: Lazy<RwLock<Connection>> = Lazy::new(|| RwLock::new(Connection::new()));
 

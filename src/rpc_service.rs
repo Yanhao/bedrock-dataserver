@@ -7,9 +7,9 @@ use futures_util::stream;
 use log::{debug, error, info, warn};
 use tonic::{Request, Response, Status, Streaming};
 
-use dataserver::replog_pb::{self, Entry};
-use dataserver::service_pb::data_service_server::DataService;
-use dataserver::service_pb::{
+use crate::replog_pb::{self, Entry};
+use crate::service_pb::data_service_server::DataService;
+use crate::service_pb::{
     migrate_shard_request, CancelTxRequest, CancelTxResponse, CommitTxRequest, CommitTxResponse,
     CreateShardRequest, CreateShardResponse, DeleteShardRequest, KeyValue, LockRangeRequest,
     LockRangeResponse, LockRecordRequest, LockRecordResponse, MergeShardRequest,

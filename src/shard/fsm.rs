@@ -7,8 +7,8 @@ use log::{debug, error, info, warn};
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tonic::Request;
 
-use dataserver::replog_pb::Entry;
-use dataserver::service_pb::{
+use crate::replog_pb::Entry;
+use crate::service_pb::{
     data_service_client, shard_append_log_request, ShardAppendLogRequest,
     ShardInstallSnapshotRequest,
 };

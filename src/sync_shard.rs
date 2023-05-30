@@ -6,9 +6,9 @@ use log::{info, warn};
 use once_cell::sync::Lazy;
 use tokio::{select, sync::mpsc};
 
-use dataserver::metaserver_pb::sync_shard_in_data_server_request::SyncShardInfo;
-use dataserver::metaserver_pb::{meta_service_client, SyncShardInDataServerRequest};
-use dataserver::service_pb::ShardMeta;
+use crate::metaserver_pb::sync_shard_in_data_server_request::SyncShardInfo;
+use crate::metaserver_pb::{meta_service_client, SyncShardInDataServerRequest};
+use crate::service_pb::ShardMeta;
 
 use crate::config::get_self_socket_addr;
 use crate::metadata::{Meta, ShardMetaIter, METADATA};

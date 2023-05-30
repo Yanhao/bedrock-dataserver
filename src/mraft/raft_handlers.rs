@@ -16,8 +16,8 @@ use crate::raftnode_manager::{RAFT_MANAGER, RAFT_NOTIFIER};
 use crate::tcp_server::{Responser, TcpServer};
 
 
-use dataserver::message_pb::InstallSnapshot;
-use dataserver::message_pb::RaftContext;
+use crate::message_pb::InstallSnapshot;
+use crate::message_pb::RaftContext;
 
 // pub fn raft_message(
 //     _chunk_id: ChunkID,

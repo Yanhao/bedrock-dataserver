@@ -13,8 +13,7 @@ use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, Mutex};
 
-use dataserver::message_pb::{RequestHeader, ResponseHeader};
-
+use crate::message_pb::{RequestHeader, ResponseHeader};
 use crate::chunk::ChunkID;
 use crate::error::DataServerError;
 

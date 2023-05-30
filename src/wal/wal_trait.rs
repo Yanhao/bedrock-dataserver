@@ -1,7 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use dataserver::replog_pb::Entry;
+use crate::replog_pb::Entry;
 
 #[async_trait]
 pub trait WalTrait {
