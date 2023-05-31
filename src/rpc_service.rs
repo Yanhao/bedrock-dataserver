@@ -7,6 +7,8 @@ use futures_util::stream;
 use log::{debug, error, info, warn};
 use tonic::{Request, Response, Status, Streaming};
 
+use crate::connections::CONNECTIONS;
+use crate::param_check;
 use crate::replog_pb::{self, Entry};
 use crate::service_pb::data_service_server::DataService;
 use crate::service_pb::{
@@ -20,9 +22,6 @@ use crate::service_pb::{
     SplitShardRequest, SplitShardResponse, StartTxRequest, StartTxResponse,
     TransferShardLeaderRequest, TransferShardLeaderResponse,
 };
-
-use crate::connections::CONNECTIONS;
-use crate::param_check;
 use crate::shard::{self, Fsm, SHARD_MANAGER};
 use crate::wal::Wal;
 

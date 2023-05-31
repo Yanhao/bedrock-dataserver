@@ -36,6 +36,7 @@ sled = "0.34.7"
 scopeguard = "1.1.0"
 console-subscriber = "0.1.7"
 num-bigint = "0.4.3"
+parking_lot = "0.12.1"
 
 [build-dependencies]
 prost-build = "0.7"

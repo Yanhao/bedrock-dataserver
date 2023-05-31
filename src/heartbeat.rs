@@ -1,30 +1,28 @@
-use std::sync::{Mutex, RwLock};
-
 use anyhow::Result;
 use log::{info, warn};
 use once_cell::sync::Lazy;
+use parking_lot::RwLock;
 use tokio::{select, sync::mpsc};
-
-use crate::metaserver_pb::{meta_service_client, HeartBeatRequest};
 
 use crate::config::get_self_socket_addr;
 use crate::metadata::METADATA;
+use crate::metaserver_pb::{meta_service_client, HeartBeatRequest};
 
 pub static HEART_BEATER: Lazy<RwLock<HeartBeater>> = Lazy::new(|| Default::default());
 
 #[derive(Default)]
 pub struct HeartBeater {
-    stop_ch: Mutex<Option<mpsc::Sender<()>>>,
+    stop_ch: Option<mpsc::Sender<()>>,
 }
 
 impl HeartBeater {
-    pub async fn start(&mut self) -> Result<()> {
+    pub async fn start(&mut self) {
         let (tx, mut rx) = mpsc::channel(1);
-        *self.stop_ch.lock().unwrap() = Some(tx);
-
-        let mut ticker = tokio::time::interval(tokio::time::Duration::from_secs(10));
+        self.stop_ch.replace(tx);
 
         tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(tokio::time::Duration::from_secs(10));
+
             loop {
                 select! {
                     _ = rx.recv() => {
@@ -62,18 +60,13 @@ impl HeartBeater {
 
             info!("heartbeat stopped ...");
         });
-
-        Ok(())
     }
 
-    pub async fn stop(&mut self) {
-        self.stop_ch
-            .lock()
-            .unwrap()
-            .as_ref()
-            .unwrap()
-            .send(())
-            .await
-            .unwrap();
+    pub async fn stop(&mut self) -> Result<()> {
+        if let Some(s) = self.stop_ch.as_ref() {
+            s.send(()).await?;
+        }
+
+        Ok(())
     }
 }

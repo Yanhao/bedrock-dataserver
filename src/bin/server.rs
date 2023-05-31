@@ -13,9 +13,9 @@ use tonic::transport::Server as GrpcServer;
 
 use dataserver::config::{config_mod_init, CONFIG, CONFIG_DIR};
 use dataserver::format::Formatter;
+use dataserver::heartbeat;
 use dataserver::rpc_service::RealDataServer;
 use dataserver::service_pb::data_service_server::DataServiceServer;
-use dataserver::heartbeat;
 use dataserver::sync_shard;
 
 fn setup_logger() -> Result<()> {
@@ -169,19 +169,8 @@ async fn main() {
     //     info!("stop raft peer server");
     // });
 
-    heartbeat::HEART_BEATER
-        .write()
-        .unwrap()
-        .start()
-        .await
-        .unwrap();
-
-    sync_shard::SHARD_SYNCER
-        .write()
-        .unwrap()
-        .start()
-        .await
-        .unwrap();
+    heartbeat::HEART_BEATER.write().start().await;
+    sync_shard::SHARD_SYNCER.write().start().await;
 
     let grpc_server_addr = CONFIG
         .read()
@@ -205,7 +194,7 @@ async fn main() {
     signal::ctrl_c().await.unwrap();
     // r1.read().await.stop().await;
 
-    heartbeat::HEART_BEATER.write().unwrap().stop().await;
+    heartbeat::HEART_BEATER.write().stop().await.unwrap();
 
     info!("ctrl-c pressed");
     if let Err(e) = std::fs::remove_file(work_dir + "/LOCK") {

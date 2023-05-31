@@ -359,6 +359,7 @@ dependencies = [
  "log",
  "num-bigint",
  "once_cell",
+ "parking_lot 0.12.1",
  "prost 0.7.0",
  "prost-build",
  "prost-types 0.7.0",

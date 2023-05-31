@@ -1,17 +1,15 @@
-use std::sync::{Mutex, RwLock};
-
 use anyhow::Result;
 use futures_util::stream;
 use log::{info, warn};
 use once_cell::sync::Lazy;
+use parking_lot::RwLock;
 use tokio::{select, sync::mpsc};
-
-use crate::metaserver_pb::sync_shard_in_data_server_request::SyncShardInfo;
-use crate::metaserver_pb::{meta_service_client, SyncShardInDataServerRequest};
-use crate::service_pb::ShardMeta;
 
 use crate::config::get_self_socket_addr;
 use crate::metadata::{Meta, ShardMetaIter, METADATA};
+use crate::metaserver_pb::sync_shard_in_data_server_request::SyncShardInfo;
+use crate::metaserver_pb::{meta_service_client, SyncShardInDataServerRequest};
+use crate::service_pb::ShardMeta;
 
 pub static SHARD_SYNCER: Lazy<RwLock<ShardSyncer>> = Lazy::new(|| Default::default());
 
@@ -74,17 +72,17 @@ impl Iterator for SyncShardIter<ShardMetaIter> {
 
 #[derive(Default)]
 pub struct ShardSyncer {
-    stop_ch: Mutex<Option<mpsc::Sender<()>>>,
+    stop_ch: Option<mpsc::Sender<()>>,
 }
 
 impl ShardSyncer {
-    pub async fn start(&mut self) -> Result<()> {
+    pub async fn start(&mut self) {
         let (tx, mut rx) = mpsc::channel(1);
-        *self.stop_ch.lock().unwrap() = Some(tx);
-
-        let mut ticker = tokio::time::interval(tokio::time::Duration::from_secs(30 * 60));
+        self.stop_ch.replace(tx);
 
         tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(tokio::time::Duration::from_secs(30 * 60));
+
             loop {
                 select! {
                     _ = rx.recv() => {
@@ -123,18 +121,13 @@ impl ShardSyncer {
 
             info!("sync shard stopped ...");
         });
-
-        Ok(())
     }
 
-    pub async fn stop(&mut self) {
-        self.stop_ch
-            .lock()
-            .unwrap()
-            .as_ref()
-            .unwrap()
-            .send(())
-            .await
-            .unwrap();
+    pub async fn stop(&mut self) -> Result<()> {
+        if let Some(s) = self.stop_ch.as_ref() {
+            s.send(()).await?;
+        }
+
+        Ok(())
     }
 }
