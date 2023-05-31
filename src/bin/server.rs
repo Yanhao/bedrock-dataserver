@@ -10,7 +10,7 @@ use tracing_subscriber;
 
 use dataserver::config::{config_mod_init, CONFIG, CONFIG_DIR};
 use dataserver::format::Formatter;
-use dataserver::rpc_service::RealDataServer;
+use dataserver::service_handler::RealDataServer;
 use dataserver::service_pb::data_service_server::DataServiceServer;
 
 fn create_lock_file(path: impl AsRef<Path>) -> Result<()> {

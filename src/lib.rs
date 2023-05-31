@@ -31,7 +31,7 @@ pub mod connections;
 pub mod kv_store;
 pub mod metadata;
 pub mod param_check;
-pub mod rpc_service;
+pub mod service_handler;
 pub mod shard;
 pub mod sync_shard;
 pub mod wal;
