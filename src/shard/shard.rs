@@ -4,11 +4,11 @@ use std::time;
 use std::vec::Vec;
 
 use anyhow::{bail, Result};
-use log::info;
 use num_bigint::{BigUint, ToBigUint};
 use prost::Message;
 use tokio::sync::RwLock;
 use tonic::Request;
+use tracing::info;
 
 use crate::kv_store::{self, SledStore};
 use crate::service_pb::CreateShardRequest;

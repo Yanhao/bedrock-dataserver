@@ -4,8 +4,8 @@ use std::time;
 use anyhow::Result;
 use futures::StreamExt;
 use futures_util::stream;
-use log::{debug, error, info, warn};
 use tonic::{Request, Response, Status, Streaming};
+use tracing::{debug, error, info, warn};
 
 use crate::connections::CONNECTIONS;
 use crate::param_check;

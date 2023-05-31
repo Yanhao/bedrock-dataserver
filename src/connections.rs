@@ -2,10 +2,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::Result;
-use log::info;
 use once_cell::sync::Lazy;
 use tokio::sync::RwLock;
 use tonic::transport::Channel;
+use tracing::info;
 
 use crate::service_pb::data_service_client;
 

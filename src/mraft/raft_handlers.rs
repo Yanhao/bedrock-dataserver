@@ -2,7 +2,7 @@ use std::future::Future;
 use std::slice;
 
 use anyhow::Result;
-use log::{debug, error, info};
+use tracing::{debug, error, info};
 use prost::Message as PbMessage;
 
 use raft::eraftpb::MessageType;

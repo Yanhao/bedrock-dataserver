@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use anyhow::{bail, Result};
 use lazy_static::lazy_static;
-use log::{error, info};
+use tracing::{error, info};
 use prost::Message as PbMessage;
 use protobuf::Message as PPbMessage;
 use raft::eraftpb;

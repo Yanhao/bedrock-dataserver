@@ -3,9 +3,9 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use futures_util::stream;
-use log::{debug, error, info, warn};
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tonic::Request;
+use tracing::{debug, error, info, warn};
 
 use crate::replog_pb::Entry;
 use crate::service_pb::{

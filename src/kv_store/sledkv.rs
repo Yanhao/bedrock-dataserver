@@ -2,9 +2,9 @@ use std::iter::Iterator;
 use std::path::PathBuf;
 
 use anyhow::{bail, Result};
-use log::{debug, info};
 use sled;
 use tokio::fs::remove_dir_all;
+use tracing::{debug, info};
 
 use crate::{config::CONFIG, shard::SnapShoter};
 
@@ -21,13 +21,7 @@ pub struct KeyValue {
 
 impl SledStore {
     fn store_path(shard_id: u64) -> PathBuf {
-        let wal_dir: PathBuf = CONFIG
-            .read()
-            .unwrap()
-            .work_directory
-            .as_ref()
-            .unwrap()
-            .into();
+        let wal_dir: PathBuf = CONFIG.read().work_directory.as_ref().unwrap().into();
 
         info!("shard_id: 0x{:016x}", shard_id);
         let storage_id: u32 = ((shard_id & 0xFFFFFFFF_00000000) >> 32) as u32;

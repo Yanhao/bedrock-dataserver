@@ -6,7 +6,7 @@ use std::sync::RwLock;
 use anyhow::{bail, Result};
 use async_channel;
 use lazy_static::lazy_static;
-use log::{info, warn};
+use tracing::{info, warn};
 use tokio::sync::watch;
 
 use crate::chunk::ChunkID;

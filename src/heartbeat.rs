@@ -1,8 +1,8 @@
 use anyhow::Result;
-use log::{info, warn};
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use tokio::{select, sync::mpsc};
+use tracing::{info, warn};
 
 use crate::config::get_self_socket_addr;
 use crate::metadata::METADATA;
@@ -29,7 +29,7 @@ impl HeartBeater {
                         break;
                     }
                     _ = ticker.tick() => {
-                        let meta = METADATA.read().unwrap().get_meta();
+                        let meta = METADATA.read().get_meta();
                         let addr = meta.metaserver_leader;
 
                         info!("heartbeat to metaserver ... metaserver addr: {}", addr);

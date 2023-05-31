@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::sync::{Mutex, RwLock};
 
 use anyhow::{bail, Result};
-use log::{debug, info};
+use tracing::{debug, info};
 use prost::Message as PbMessage;
 use raft::prelude::*;
 use tokio::sync::mpsc;

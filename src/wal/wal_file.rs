@@ -3,10 +3,10 @@ use std::path::{Path, PathBuf};
 use std::slice;
 
 use anyhow::{anyhow, bail, Result};
-use log::{debug, error, info};
 use prost::Message;
 use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+use tracing::{debug, error, info};
 
 use crate::replog_pb::Entry;
 

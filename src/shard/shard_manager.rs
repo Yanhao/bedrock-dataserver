@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::{bail, Result};
-use log::info;
 use once_cell::sync::Lazy;
 use tokio::sync::RwLock;
+use tracing::info;
 
 use crate::wal::Wal;
 

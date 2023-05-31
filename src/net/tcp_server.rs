@@ -4,7 +4,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use anyhow::{bail, Result};
-use log::{debug, error, info};
+use tracing::{debug, error, info};
 use prost::Message;
 use tokio::select;
 use tokio::io::AsyncReadExt;

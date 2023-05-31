@@ -1,13 +1,13 @@
 use std::fs::read_to_string;
 use std::mem::MaybeUninit;
 use std::net::SocketAddr;
-use std::sync::RwLock;
 
 use anyhow::{anyhow, Result};
 use get_if_addrs::get_if_addrs;
-use log::{debug, error, info};
 use once_cell::sync::Lazy;
+use parking_lot::RwLock;
 use serde::{self, Deserialize};
+use tracing::{debug, error, info};
 
 use crate::error::DataServerError;
 
@@ -19,7 +19,7 @@ pub static SELF_ADDR: Lazy<RwLock<SocketAddr>> =
     Lazy::new(|| RwLock::new(unsafe { MaybeUninit::uninit().assume_init() }));
 
 pub fn get_self_socket_addr() -> SocketAddr {
-    *SELF_ADDR.read().unwrap()
+    *SELF_ADDR.read()
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -85,11 +85,12 @@ pub fn config_mod_init(config_file: &str) -> Result<()> {
     let addr: SocketAddr = conf.rpc_server_addr.clone().unwrap().parse().unwrap();
     let ip = get_if_addrs().unwrap()[0].addr.ip();
 
-    *SELF_ADDR.write().unwrap() = SocketAddr::new(ip, addr.port());
-    *CONFIG.write().unwrap() = conf;
+    *SELF_ADDR.write() = SocketAddr::new(ip, addr.port());
+    *CONFIG.write() = conf;
 
     info!("successfully initialized config module");
-    debug!("configuration: {:?}", *CONFIG.read().unwrap());
+    debug!("configuration: {:?}", *CONFIG.read());
+
     Ok(())
 }
 

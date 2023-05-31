@@ -1,14 +1,14 @@
 use std::fs::{read_to_string, OpenOptions};
 use std::io::Write;
 use std::path::Path;
-use std::sync::RwLock;
 
 use anyhow::{anyhow, Result};
-use log::{debug, warn};
 use once_cell::sync::Lazy;
+use parking_lot::RwLock;
 use prost::Message;
 use serde::{Deserialize, Serialize};
 use sled;
+use tracing::{debug, warn};
 
 use crate::service_pb::ShardMeta;
 
@@ -16,9 +16,10 @@ const METADATA_PATH: &str = "metadata.json";
 const METADATA_DIRECTORY: &str = "metadata";
 
 pub static METADATA: Lazy<RwLock<MetaData>> = Lazy::new(|| {
-    let json_raw = read_to_string(METADATA_PATH).unwrap();
     debug!("parse json metadata");
-    let m: JsonMeta = serde_json::from_str(&json_raw).unwrap();
+
+    let json_raw = read_to_string(METADATA_PATH).unwrap();
+    let m: DsMeta = serde_json::from_str(&json_raw).unwrap();
 
     RwLock::new(MetaData::new(m, METADATA_DIRECTORY).unwrap())
 });
@@ -34,7 +35,7 @@ where
 }
 
 #[derive(Deserialize, Serialize, Clone)]
-pub struct JsonMeta {
+pub struct DsMeta {
     pub cluster_name: String,
 
     pub metaserver_addrs: Vec<String>,
@@ -45,21 +46,21 @@ pub struct JsonMeta {
 }
 
 pub struct MetaData {
-    data: JsonMeta,
-    db: sled::Db,
+    data: DsMeta,
+    meta_db: sled::Db,
 }
 
 impl MetaData {
-    pub fn new(data: JsonMeta, meta_dir: impl AsRef<Path>) -> Result<Self> {
+    pub fn new(data: DsMeta, meta_dir: impl AsRef<Path>) -> Result<Self> {
         let db = sled::open(meta_dir.as_ref()).unwrap();
-        Ok(Self { data, db })
+        Ok(Self { data, meta_db: db })
     }
 
-    pub fn get_meta(&self) -> JsonMeta {
+    pub fn get_meta(&self) -> DsMeta {
         self.data.clone()
     }
 
-    pub fn save_meta(&mut self, json_meta: JsonMeta) -> Result<()> {
+    pub fn save_meta(&mut self, json_meta: DsMeta) -> Result<()> {
         let json_raw = serde_json::to_string(&json_meta).unwrap();
 
         let mut mfile = OpenOptions::new()
@@ -83,7 +84,7 @@ impl MetaData {
 impl Meta<ShardMetaIter> for MetaData {
     fn is_shard_exists(&self, shard_id: u64) -> Result<bool> {
         let key = Self::shard_key(shard_id);
-        Ok(if let None = self.db.get(&key)? {
+        Ok(if let None = self.meta_db.get(&key)? {
             false
         } else {
             true
@@ -96,20 +97,20 @@ impl Meta<ShardMetaIter> for MetaData {
         let mut buf = Vec::<u8>::new();
         meta.encode(&mut buf).unwrap();
 
-        self.db.insert(&key, buf).map_err(|_| anyhow!(""))?;
+        self.meta_db.insert(&key, buf).map_err(|_| anyhow!(""))?;
         Ok(())
     }
 
     fn remove_shard(&self, shard_id: u64) -> Result<()> {
         let key = Self::shard_key(shard_id);
 
-        self.db.remove(&key).map_err(|_| anyhow!(""))?;
+        self.meta_db.remove(&key).map_err(|_| anyhow!(""))?;
         Ok(())
     }
 
     fn shard_iter(&self) -> ShardMetaIter {
         let prefix_key = "/shard/";
-        let iter = self.db.scan_prefix(prefix_key.as_bytes());
+        let iter = self.meta_db.scan_prefix(prefix_key.as_bytes());
 
         ShardMetaIter::new(iter)
     }

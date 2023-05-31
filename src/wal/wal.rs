@@ -3,8 +3,8 @@ use std::str::FromStr;
 
 use anyhow::{bail, Result};
 use async_trait::async_trait;
-use log::{debug, error, info};
 use tokio::fs::{create_dir_all, remove_dir_all};
+use tracing::{debug, error, info};
 
 use crate::replog_pb::Entry;
 
@@ -44,13 +44,7 @@ impl Wal {
     }
 
     pub async fn create_wal_dir(shard_id: u64) -> Result<()> {
-        let wal_dir: PathBuf = CONFIG
-            .read()
-            .unwrap()
-            .wal_directory
-            .as_ref()
-            .unwrap()
-            .into();
+        let wal_dir: PathBuf = CONFIG.read().wal_directory.as_ref().unwrap().into();
 
         let wal_manager_dir = Self::generage_path(wal_dir, shard_id);
         create_dir_all(wal_manager_dir).await.unwrap();
@@ -59,13 +53,7 @@ impl Wal {
     }
 
     pub async fn load_wal_by_shard_id(shard_id: u64) -> Result<Wal> {
-        let wal_dir: PathBuf = CONFIG
-            .read()
-            .unwrap()
-            .wal_directory
-            .as_ref()
-            .unwrap()
-            .into();
+        let wal_dir: PathBuf = CONFIG.read().wal_directory.as_ref().unwrap().into();
 
         let wal_manager_dir = Self::generage_path(wal_dir, shard_id);
         return Wal::load(wal_manager_dir).await;

@@ -1,9 +1,9 @@
 use anyhow::Result;
 use futures_util::stream;
-use log::{info, warn};
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use tokio::{select, sync::mpsc};
+use tracing::{info, warn};
 
 use crate::config::get_self_socket_addr;
 use crate::metadata::{Meta, ShardMetaIter, METADATA};
@@ -89,7 +89,7 @@ impl ShardSyncer {
                         break;
                     }
                     _ = ticker.tick() => {
-                        let meta = METADATA.read().unwrap().get_meta();
+                        let meta = METADATA.read().get_meta();
                         let addr = meta.metaserver_leader;
 
                         info!("sync shard to metaserver ... metaserver addr: {}", addr);
@@ -101,7 +101,7 @@ impl ShardSyncer {
                             Ok(v) => v
                         };
 
-                        let shards = METADATA.read().unwrap().shard_iter();
+                        let shards = METADATA.read().shard_iter();
 
                         let req = tonic::Request::new(
                             stream::iter(SyncShardIter::new(shards.into_iter()))

@@ -1,7 +1,7 @@
 use anyhow::{bail, Result};
 
-use log::warn;
 use prost::Message;
+use tracing::warn;
 
 use super::error::ShardError;
 use crate::replog_pb::Entry;

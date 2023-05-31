@@ -1,6 +1,6 @@
 use std::net::{AddrParseError, SocketAddr};
 
-use log::warn;
+use tracing::warn;
 
 use crate::service_pb::{
     CreateShardRequest, DeleteShardRequest, LockRangeRequest, LockRecordRequest, MergeShardRequest,
