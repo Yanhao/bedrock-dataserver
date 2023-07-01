@@ -35,9 +35,9 @@ impl Notifier {
 
     pub async fn wait(&mut self, time_out: tokio::time::Duration) -> Result<(), ShardError> {
         if let Err(_) = tokio::time::timeout(time_out, self.receiver.recv()).await {
-            self.err = Err(ShardError::TimeOut.into());
+            self.err = Err(ShardError::Timeout.into());
 
-            return Err(ShardError::TimeOut);
+            return Err(ShardError::Timeout);
         }
 
         Ok(())
@@ -45,7 +45,7 @@ impl Notifier {
 
     pub fn get_error(&self) -> Result<(), ShardError> {
         match self.err {
-            Err(ShardError::TimeOut) => Err(ShardError::TimeOut),
+            Err(ShardError::Timeout) => Err(ShardError::Timeout),
             _ => Ok(()),
         }
     }
@@ -149,8 +149,6 @@ impl OrderKeeper {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     pub fn test_order_keeper() {}
 }

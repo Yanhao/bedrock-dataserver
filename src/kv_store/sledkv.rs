@@ -71,13 +71,13 @@ impl SledStore {
         Ok(v.as_ref().to_owned())
     }
 
-    pub async fn kv_set(&mut self, key: &[u8], value: &[u8]) -> Result<()> {
+    pub async fn kv_set(&self, key: &[u8], value: &[u8]) -> Result<()> {
         self.db.insert(key, value);
         Ok(())
     }
 
     pub async fn kv_scan(
-        &mut self,
+        &self,
         start_key: &[u8],
         end_key: &[u8],
         limit: i32,
@@ -104,7 +104,7 @@ impl SledStore {
         Ok(kvs)
     }
 
-    pub async fn kv_delete_range(&mut self, start_key: &[u8], end_key: &[u8]) -> Result<()> {
+    pub async fn kv_delete_range(&self, start_key: &[u8], end_key: &[u8]) -> Result<()> {
         let start_key: Vec<u8> = start_key.into();
 
         loop {

@@ -10,17 +10,8 @@ pub enum ShardError {
     #[error("no such key")]
     NoSuchKey,
 
-    #[error("entry has been compacted")]
-    EntryCompacted,
-    #[error("index of out bound")]
-    IndexOutOfBound,
-    #[error("empty replicate log")]
-    EmptyRepLog,
-    #[error("compact failed")]
-    FailedToCompact,
-
     #[error("order keeper timeout")]
-    TimeOut,
+    Timeout,
     #[error("ignore this order")]
     IgnoreOrder,
 

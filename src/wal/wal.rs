@@ -6,9 +6,8 @@ use async_trait::async_trait;
 use tokio::fs::{create_dir_all, remove_dir_all};
 use tracing::{debug, error, info};
 
-use crate::replog_pb::Entry;
-
 use crate::config::CONFIG;
+use crate::replog_pb::Entry;
 
 use super::error::WalError;
 use super::{wal_file, WalTrait};
