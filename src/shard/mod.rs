@@ -1,10 +1,30 @@
-mod error;
+use thiserror::Error;
+
 mod order_keeper;
 mod shard;
 mod shard_manager;
-mod snapshoter;
 
-pub use error::ShardError;
 pub use shard::Shard;
 pub use shard_manager::{ShardManager, SHARD_MANAGER};
-pub use snapshoter::SnapShoter;
+
+#[derive(Error, Debug)]
+pub enum ShardError {
+    #[error("no such shard")]
+    NoSuchShard,
+    #[error("shard already exists")]
+    ShardExists,
+
+    #[error("no such key")]
+    NoSuchKey,
+
+    #[error("order keeper timeout")]
+    Timeout,
+    #[error("ignore this order")]
+    IgnoreOrder,
+
+    #[error("not leader")]
+    NotLeader,
+
+    #[error("append log failed")]
+    FailedToAppendLog,
+}

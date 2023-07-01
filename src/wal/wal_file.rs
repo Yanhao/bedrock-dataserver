@@ -9,7 +9,7 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tracing::{debug, error, info};
 
 use crate::replog_pb::Entry;
-use crate::wal::error::WalError;
+use crate::wal::WalError;
 
 const MAX_META_COUNT: u64 = 10;
 const WAL_MAGIC: u64 = 0x12345;

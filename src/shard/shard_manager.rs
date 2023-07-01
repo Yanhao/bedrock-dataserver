@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 use once_cell::sync::Lazy;
 use tokio::sync::RwLock;
 use tonic::Request;
@@ -10,15 +10,14 @@ use tracing::info;
 use crate::service_pb::CreateShardRequest;
 use crate::wal::Wal;
 
-use super::{error::ShardError, Shard};
+use super::{Shard, ShardError};
 
 const DEFAULT_SHARD_CAPACITY: u64 = 10240;
 
-pub static SHARD_MANAGER: Lazy<RwLock<ShardManager>> =
-    Lazy::new(|| RwLock::new(ShardManager::new()));
+pub static SHARD_MANAGER: Lazy<ShardManager> = Lazy::new(|| ShardManager::new());
 
 pub struct ShardManager {
-    shards: RwLock<HashMap<u64, Arc<Shard>>>,
+    shards: parking_lot::RwLock<HashMap<u64, Arc<Shard>>>,
 }
 
 impl ShardManager {
@@ -28,44 +27,38 @@ impl ShardManager {
         };
     }
 
-    pub async fn load_shard(&self, shard_id: u64) -> Result<Arc<Shard>> {
-        if let Ok(v) = self.get_shard(shard_id).await {
-            return Ok(v);
-        }
+    pub async fn create_shard(req: &Request<CreateShardRequest>) -> Result<()> {
+        let shard_id = req.get_ref().shard_id;
+        Shard::create_shard(req).await?;
+        Wal::create_wal_dir(shard_id).await?;
 
+        Ok(())
+    }
+
+    async fn load_shard(&self, shard_id: u64) -> Result<Arc<Shard>> {
         let shard = Arc::new(Shard::load_shard(shard_id).await.unwrap());
-        let wal = Wal::load_wal_by_shard_id(shard_id).await.unwrap();
 
         shard.clone().start().await.unwrap();
 
-        self.shards.write().await.insert(shard_id, shard.clone());
+        self.shards.write().insert(shard_id, shard.clone());
 
         Ok(shard)
     }
 
     pub async fn get_shard(&self, id: u64) -> Result<Arc<Shard>> {
-        match self.shards.read().await.get(&id) {
-            None => bail!(ShardError::NoSuchShard),
-            Some(shard) => {
-                return Ok(shard.to_owned());
-            }
+        if let Some(shard) = self.shards.read().get(&id) {
+            return Ok(shard.clone());
         }
+
+        self.load_shard(id).await
     }
 
     pub async fn remove_shard(&self, id: u64) -> Result<()> {
+        if !self.shards.read().contains_key(&id) {
+            return Ok(());
+        }
+
         // self.shards.read().await.remove(&id);
-
-        Ok(())
-    }
-
-    pub async fn create_shard(&self, req: &Request<CreateShardRequest>) -> Result<()> {
-        let shard = Arc::new(Shard::create_shard(req).await?);
-        shard.clone().start().await?;
-
-        let shard_id = req.get_ref().shard_id;
-        self.shards.write().await.insert(shard_id, shard);
-
-        info!("insert shard to cache, shard id: 0x{:016x}", shard_id);
 
         Ok(())
     }
@@ -94,10 +87,7 @@ impl ShardManager {
 
         Wal::create_wal_dir(shard_id).await.unwrap();
 
-        self.shards
-            .write()
-            .await
-            .insert(new_shard_id, new_shard.clone());
+        self.shards.write().insert(new_shard_id, new_shard.clone());
 
         let iter = shard.create_split_iter(&start_key, &end_key).await.unwrap();
         for kv in iter.into_iter() {

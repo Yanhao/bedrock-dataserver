@@ -21,8 +21,7 @@ use crate::service_pb::{
     data_service_client, shard_append_log_request, CreateShardRequest, ShardAppendLogRequest,
     ShardInstallSnapshotRequest, ShardMeta,
 };
-use crate::shard::error::{self, ShardError};
-use crate::shard::order_keeper::OrderKeeper;
+use crate::shard::{order_keeper::OrderKeeper, ShardError};
 use crate::wal::{Wal, WalTrait};
 
 const INPUT_CHANNEL_LEN: usize = 10240;
@@ -317,7 +316,7 @@ impl Shard {
     pub async fn get(&self, key: &[u8]) -> Result<Vec<u8>> {
         let value = match self.kv_store.kv_get(key.as_ref()).await {
             Err(_) => {
-                bail!(error::ShardError::NoSuchKey)
+                bail!(ShardError::NoSuchKey)
             }
             Ok(v) => v,
         };
@@ -626,37 +625,3 @@ impl Shard {
         return Ok(last_wal_index);
     }
 }
-
-// #[async_trait]
-// impl SnapShoter for Shard {
-//     async fn create_snapshot(&self) -> Result<Vec<Vec<u8>>> {
-//         let mut ret: Vec<Vec<u8>> = Default::default();
-
-//         for kv in self.kv_data.read().await.iter() {
-//             let mut key = kv.0.to_owned();
-//             let mut value = kv.1.to_owned();
-
-//             let mut item = vec![];
-//             item.append(&mut key);
-//             item.append(&mut vec!['\n' as u8]);
-//             item.append(&mut value);
-
-//             ret.push(item);
-//         }
-
-//         Ok(ret)
-//     }
-
-//     async fn install_snapshot(&mut self, piece: &[u8]) -> Result<()> {
-//         let piece = piece.to_owned();
-//         let mut ps = piece.split(|b| *b == '\n' as u8);
-
-//         let key = ps.next().unwrap().to_owned();
-//         let value = ps.next().unwrap().to_owned();
-//         assert!(ps.next().is_none());
-
-//         self.kv_store.write().await.insert(key, value);
-
-//         Ok(())
-//     }
-// }

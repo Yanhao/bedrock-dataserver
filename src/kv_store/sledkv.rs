@@ -6,7 +6,7 @@ use sled;
 use tokio::fs::remove_dir_all;
 use tracing::{debug, info};
 
-use crate::{config::CONFIG, shard::SnapShoter};
+use crate::config::CONFIG;
 
 use super::error;
 

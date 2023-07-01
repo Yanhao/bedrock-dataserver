@@ -30,9 +30,11 @@ pub mod heartbeat;
 pub mod connections;
 pub mod kv_store;
 pub mod metadata;
+mod ms_client;
 pub mod param_check;
 pub mod service_handler;
 pub mod shard;
+mod shutdown;
 pub mod sync_shard;
 pub mod wal;
 

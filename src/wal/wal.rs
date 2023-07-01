@@ -9,8 +9,7 @@ use tracing::{debug, error, info};
 use crate::config::CONFIG;
 use crate::replog_pb::Entry;
 
-use super::error::WalError;
-use super::{wal_file, WalTrait};
+use super::{wal_file, WalError, WalTrait};
 
 const MAX_ENTRY_COUNT: u64 = 100;
 
