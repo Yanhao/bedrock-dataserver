@@ -44,6 +44,7 @@ impl Leader {
                             match shard.clone().append_log_entry_to(addr.to_string(), en.entry.clone()).await {
                                 Err(ShardError::NotLeader) => {
                                     shard.set_is_leader(false);
+                                    shard.switch_role_to_follower().await.unwrap();
                                     en.sender.send(Err(ShardError::NotLeader)).await.unwrap();
                                     continue 'outer;
                                 },

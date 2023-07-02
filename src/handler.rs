@@ -325,6 +325,7 @@ impl DataService for RealDataServer {
         shard.set_replicates(&socket_addrs).unwrap();
         shard.set_is_leader(true);
         shard.update_leader_change_ts(req.get_ref().leader_change_ts.to_owned().unwrap().into());
+        shard.switch_role_to_leader().await.unwrap();
 
         info!("successfully transfer shard leader");
 
