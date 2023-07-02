@@ -260,8 +260,10 @@ impl Shard {
         self.next_index.load(Ordering::Relaxed)
     }
 
-    pub fn reset_replog(&self, last_index: u64) -> Result<()> {
-        todo!()
+    pub async fn reset_replog(&self, last_index: u64) -> Result<()> {
+        self.next_index.store(last_index, Ordering::Relaxed);
+
+        self.replog.write().await.compact(last_index).await
     }
 }
 
@@ -395,7 +397,6 @@ impl Shard {
         self: Arc<Shard>,
         addr: String,
         en: Entry,
-        replog: Arc<RwLock<Wal>>,
     ) -> std::result::Result<(), ShardError> {
         let shard_id = self.get_shard_id();
         let mut client = CONNECTIONS.get_client(addr.clone()).await.unwrap();
@@ -432,7 +433,8 @@ impl Shard {
                 return Ok(());
             }
 
-            let entries_res = replog
+            let entries_res = self
+                .replog
                 .write()
                 .await
                 .entries(last_applied_index, en.index, 1024)
@@ -483,12 +485,10 @@ impl Shard {
     }
 
     async fn install_snapshot_to(
-        shard: Arc<Shard>,
+        self: Arc<Shard>,
         mut client: data_service_client::DataServiceClient<tonic::transport::Channel>,
     ) -> Result<u64 /*last_wal_index */> {
-        let shard_id = shard.get_shard_id();
-
-        let snap = shard.kv_store.create_snapshot_iter().await.unwrap();
+        let snap = self.kv_store.create_snapshot_iter().await.unwrap();
 
         // let last_wal_index = shard.read().await.get_last_index().await; // FIXME: keep atomic with above
         let last_wal_index = 0;
@@ -504,7 +504,7 @@ impl Shard {
             item.append(&mut value);
 
             req_stream.push(ShardInstallSnapshotRequest {
-                shard_id,
+                shard_id: self.get_shard_id(),
                 data_piece: item,
                 last_wal_index,
             })

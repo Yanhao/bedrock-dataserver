@@ -24,9 +24,6 @@ impl Leader {
         let (tx, mut rx) = mpsc::channel(1);
         self.stop_ch.replace(tx);
 
-        let rep_log = shard.replog.clone();
-        let shard = shard.clone();
-
         tokio::spawn(async move {
             let shard_id = shard.get_shard_id();
             info!("start append entry task for shard: {}", shard_id);
@@ -44,7 +41,7 @@ impl Leader {
 
                         let replicates = shard.get_replicates();
                         'inner: for addr in replicates.iter() {
-                            match shard.clone().append_log_entry_to(addr.to_string(), en.entry.clone(), rep_log.clone()).await {
+                            match shard.clone().append_log_entry_to(addr.to_string(), en.entry.clone()).await {
                                 Err(ShardError::NotLeader) => {
                                     shard.set_is_leader(false);
                                     en.sender.send(Err(ShardError::NotLeader)).await.unwrap();

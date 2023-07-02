@@ -296,7 +296,7 @@ impl DataService for RealDataServer {
                 .unwrap();
         }
 
-        shard.reset_replog(last_wal_index).unwrap();
+        shard.reset_replog(last_wal_index).await.unwrap();
         shard.set_installing_snapshot(false);
 
         Ok(Response::new(ShardInstallSnapshotResponse {}))
@@ -329,43 +329,6 @@ impl DataService for RealDataServer {
         info!("successfully transfer shard leader");
 
         Ok(Response::new(TransferShardLeaderResponse {}))
-    }
-
-    async fn split_shard(
-        &self,
-        req: Request<SplitShardRequest>,
-    ) -> Result<Response<SplitShardResponse>, Status> {
-        if !param_check::split_shard_param_check(req.get_ref()) {
-            return Err(Status::invalid_argument(""));
-        }
-
-        SHARD_MANAGER
-            .split_shard(req.get_ref().shard_id, req.get_ref().new_shard_id)
-            .await;
-
-        info!(
-            "split shard successfully, shard_id: {}, new_shard_id: {}",
-            req.get_ref().shard_id,
-            req.get_ref().new_shard_id
-        );
-
-        Ok(Response::new(SplitShardResponse {}))
-    }
-
-    async fn merge_shard(
-        &self,
-        req: Request<MergeShardRequest>,
-    ) -> Result<Response<MergeShardResponse>, Status> {
-        if !param_check::merge_shard_param_check(req.get_ref()) {
-            return Err(Status::invalid_argument(""));
-        }
-
-        let shard_id_a = req.get_ref().shard_id_a;
-        let shard_id_b = req.get_ref().shard_id_b;
-
-        SHARD_MANAGER.merge_shard(shard_id_a, shard_id_b).await;
-
-        Ok(Response::new(MergeShardResponse {}))
     }
 
     async fn migrate_shard(
@@ -435,6 +398,43 @@ impl DataService for RealDataServer {
         }
 
         return Err(Status::invalid_argument(""));
+    }
+
+    async fn split_shard(
+        &self,
+        req: Request<SplitShardRequest>,
+    ) -> Result<Response<SplitShardResponse>, Status> {
+        if !param_check::split_shard_param_check(req.get_ref()) {
+            return Err(Status::invalid_argument(""));
+        }
+
+        SHARD_MANAGER
+            .split_shard(req.get_ref().shard_id, req.get_ref().new_shard_id)
+            .await;
+
+        info!(
+            "split shard successfully, shard_id: {}, new_shard_id: {}",
+            req.get_ref().shard_id,
+            req.get_ref().new_shard_id
+        );
+
+        Ok(Response::new(SplitShardResponse {}))
+    }
+
+    async fn merge_shard(
+        &self,
+        req: Request<MergeShardRequest>,
+    ) -> Result<Response<MergeShardResponse>, Status> {
+        if !param_check::merge_shard_param_check(req.get_ref()) {
+            return Err(Status::invalid_argument(""));
+        }
+
+        let shard_id_a = req.get_ref().shard_id_a;
+        let shard_id_b = req.get_ref().shard_id_b;
+
+        SHARD_MANAGER.merge_shard(shard_id_a, shard_id_b).await;
+
+        Ok(Response::new(MergeShardResponse {}))
     }
 
     async fn start_tx(
