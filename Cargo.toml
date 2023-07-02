@@ -37,6 +37,7 @@ num-bigint = "0.4.3"
 parking_lot = "0.12.1"
 tracing = "0.1"
 tracing-subscriber = "0.3"
+arc-swap = "1.6.0"
 
 idl-gen = { path = "./idl-gen" }
 
@@ -44,9 +45,9 @@ idl-gen = { path = "./idl-gen" }
 # name = "dataserver"
 # path = "src/dataserver.rs"
 
-#[[bin]]
-#name = "dscli"
-#path = "src/dscli.rs"
+# [[bin]]
+# name = "dscli"
+# path = "src/dscli.rs"
 
 [profile.dev]
 opt-level = 0

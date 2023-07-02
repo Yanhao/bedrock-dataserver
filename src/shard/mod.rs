@@ -4,7 +4,7 @@ mod order_keeper;
 mod shard;
 mod shard_manager;
 
-pub use shard::Shard;
+pub use shard::{EntryWithNotifierSender, Shard};
 pub use shard_manager::{ShardManager, SHARD_MANAGER};
 
 #[derive(Error, Debug)]

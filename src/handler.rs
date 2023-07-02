@@ -182,7 +182,7 @@ impl DataService for RealDataServer {
 
         shard.mark_deleting();
         shard
-            .stop()
+            .stop_role()
             .await
             .map_err(|e| Status::internal(format!("{e}")))?;
 
@@ -405,7 +405,8 @@ impl DataService for RealDataServer {
                 .await
                 .unwrap();
 
-            shard.stop().await;
+            shard.mark_deleting();
+            shard.stop_role().await;
             shard.remove_shard().await.unwrap();
 
             return Ok(Response::new(MigrateShardResponse {}));

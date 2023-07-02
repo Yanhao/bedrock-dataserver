@@ -6,6 +6,8 @@ use std::time;
 use std::vec::Vec;
 
 use anyhow::{bail, Result};
+use arc_swap::access::Access;
+use arc_swap::ArcSwapOption;
 use futures_util::stream;
 use num_bigint::{BigUint, ToBigUint};
 use parking_lot;
@@ -23,6 +25,7 @@ use idl_gen::service_pb::{
 
 use crate::ds_client::CONNECTIONS;
 use crate::kv_store::{self, SledStore};
+use crate::role::{Follower, Leader, Role};
 use crate::shard::{order_keeper::OrderKeeper, ShardError};
 use crate::wal::{Wal, WalTrait};
 
@@ -33,7 +36,7 @@ const KV_RANGE_LIMIT: i32 = 256;
 #[derive(Debug)]
 pub struct EntryWithNotifierSender {
     pub entry: Entry,
-    sender: mpsc::Sender<Result<(), ShardError>>,
+    pub sender: mpsc::Sender<Result<(), ShardError>>,
 }
 
 pub struct EntryWithNotifierReceiver {
@@ -52,8 +55,8 @@ pub struct Shard {
 
     kv_store: kv_store::SledStore,
 
-    input: Option<mpsc::Sender<EntryWithNotifierSender>>,
-    rep_log: Arc<RwLock<Wal>>,
+    input: ArcSwapOption<mpsc::Sender<EntryWithNotifierSender>>,
+    pub rep_log: Arc<RwLock<Wal>>,
 
     next_index: AtomicU64,
     order_keeper: RwLock<OrderKeeper>,
@@ -61,7 +64,7 @@ pub struct Shard {
     deleting: AtomicBool,
     installing_snapshot: AtomicBool,
 
-    stop_ch: Option<mpsc::Sender<()>>,
+    role: RwLock<Role>,
 }
 
 impl Shard {
@@ -76,8 +79,9 @@ impl Shard {
             installing_snapshot: false.into(),
             next_index: next_index.into(),
             order_keeper: RwLock::new(OrderKeeper::new()),
-            input: None,
-            stop_ch: None,
+            input: None.into(),
+
+            role: RwLock::new(Role::NotReady),
         };
     }
 
@@ -366,86 +370,6 @@ impl Shard {
 }
 
 impl Shard {
-    pub async fn setup_ch(&mut self) -> Result<(Receiver<()>, Receiver<EntryWithNotifierSender>)> {
-        let (tx, rx) = mpsc::channel::<()>(1);
-        self.stop_ch.replace(tx);
-
-        let (input_tx, input_rx) = mpsc::channel::<EntryWithNotifierSender>(INPUT_CHANNEL_LEN);
-        self.input.replace(input_tx);
-
-        Ok((rx, input_rx))
-    }
-
-    pub async fn start(
-        self: Arc<Self>,
-        mut rx: Receiver<()>,
-        mut input_rx: Receiver<EntryWithNotifierSender>,
-    ) -> Result<()> {
-        let rep_log = self.rep_log.clone();
-        let shard = self.clone();
-
-        tokio::spawn(async move {
-            let shard_id = shard.get_shard_id();
-            info!("start append entry task for shard: {}", shard_id);
-
-            'outer: loop {
-                tokio::select! {
-                    _ = rx.recv() => {
-                        break;
-                    }
-                    e = input_rx.recv() => {
-                        let mut success_replicate_count = 0;
-                        let en = e.unwrap();
-
-                        info!("fsm worker receive entry, entry: {:?}", en);
-
-                        let replicates = shard.get_replicates();
-                        'inner: for addr in replicates.iter() {
-                            match Self::append_log_entry_to(shard.clone(), addr.to_string(), en.entry.clone(), rep_log.clone()).await {
-                                Err(ShardError::NotLeader) => {
-                                    shard.set_is_leader(false).await;
-                                    en.sender.send(Err(ShardError::NotLeader)).await.unwrap();
-                                    continue 'outer;
-                                },
-                                Err(ShardError::FailedToAppendLog) => {
-                                    continue 'inner;
-                                },
-                                Ok(_) => {
-                                    success_replicate_count +=1;
-                                    continue 'inner;
-                                }
-                                Err(_) =>{
-                                    panic!("should not happen");
-                                }
-                            }
-                        }
-
-                        info!("success_replicate_count: {}", success_replicate_count);
-                        if success_replicate_count >= 0 {
-                            if let Err(e) = en.sender.send(Ok(())).await {
-                                error!("failed: {}", e);
-                            }
-                        } else {
-                            en.sender.send(Err(ShardError::FailedToAppendLog)).await.unwrap();
-                        }
-                    }
-                }
-            }
-
-            info!("stop append entry task for shard: {}", shard_id);
-        });
-
-        Ok(())
-    }
-
-    pub async fn stop(&self) -> Result<()> {
-        if let Some(s) = self.stop_ch.as_ref() {
-            s.send(()).await?;
-        }
-
-        Ok(())
-    }
-
     pub async fn process_write(&self, entry: Entry) -> Result<EntryWithNotifierReceiver> {
         let mut entry = entry.clone();
         entry.index = self.next_index.fetch_add(1, Ordering::Relaxed);
@@ -467,7 +391,7 @@ impl Shard {
             .await
             .unwrap();
 
-        if let Some(i) = self.input.as_ref() {
+        if let Some(i) = self.input.load().as_ref() {
             i.send(EntryWithNotifierSender {
                 entry: entry.clone(),
                 sender: tx,
@@ -520,18 +444,18 @@ impl Shard {
         Ok(())
     }
 
-    async fn append_log_entry_to(
-        shard: Arc<Shard>,
+    pub async fn append_log_entry_to(
+        self: Arc<Shard>,
         addr: String,
         en: Entry,
         replog: Arc<RwLock<Wal>>,
     ) -> std::result::Result<(), ShardError> {
-        let shard_id = shard.get_shard_id();
+        let shard_id = self.get_shard_id();
         let mut client = CONNECTIONS.get_client(addr.clone()).await.unwrap();
 
         let request = Request::new(ShardAppendLogRequest {
             shard_id,
-            leader_change_ts: Some(shard.get_leader_change_ts().into()),
+            leader_change_ts: Some(self.get_leader_change_ts().into()),
             entries: vec![shard_append_log_request::Entry {
                 op: en.op.clone(),
                 index: en.index,
@@ -569,7 +493,7 @@ impl Shard {
 
             if let Err(_) = entries_res {
                 last_applied_index =
-                    match Self::install_snapshot_to(shard.clone(), client.clone()).await {
+                    match Self::install_snapshot_to(self.clone(), client.clone()).await {
                         Err(_) => {
                             return Err(ShardError::FailedToAppendLog);
                         }
@@ -583,7 +507,7 @@ impl Shard {
 
             let request = Request::new(ShardAppendLogRequest {
                 shard_id,
-                leader_change_ts: Some(shard.get_leader_change_ts().into()),
+                leader_change_ts: Some(self.get_leader_change_ts().into()),
                 entries: ents
                     .iter()
                     .map(|ent| shard_append_log_request::Entry {
@@ -646,5 +570,57 @@ impl Shard {
         // ref: https://github.com/hyperium/tonic/blob/master/examples/routeguide-tutorial.md
 
         return Ok(last_wal_index);
+    }
+}
+
+impl Shard {
+    pub async fn stop_role(&self) -> Result<()> {
+        match &*self.role.read().await {
+            Role::Leader(r) => r.stop().await?,
+            Role::Follower(r) => r.stop().await?,
+            _ => {}
+        };
+
+        *self.role.write().await = Role::NotReady;
+
+        Ok(())
+    }
+
+    pub async fn switch_role_to_leader(self: Arc<Self>) -> Result<()> {
+        if let Role::Leader(_) = &*self.role.read().await {
+            return Ok(());
+        }
+
+        if let Role::Follower(r) = &*self.role.read().await {
+            r.stop().await?;
+        }
+
+        let (input_tx, input_rx) = mpsc::channel::<EntryWithNotifierSender>(INPUT_CHANNEL_LEN);
+        self.input.store(Some(Arc::new(input_tx)));
+
+        let mut role = Leader::new();
+        role.start(self.clone(), input_rx).await?;
+
+        *self.role.write().await = Role::Leader(role);
+
+        Ok(())
+    }
+
+    pub async fn switch_role_to_follower(&self) -> Result<()> {
+        if let Role::Follower(_) = &*self.role.read().await {
+            return Ok(());
+        }
+
+        if let Role::Leader(r) = &*self.role.read().await {
+            r.stop().await?;
+        }
+
+        self.input.store(None);
+
+        let mut role = Follower::new();
+        role.start().await?;
+        *self.role.write().await = Role::Follower(role);
+
+        Ok(())
     }
 }

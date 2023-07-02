@@ -36,12 +36,9 @@ impl ShardManager {
     }
 
     async fn load_shard(&self, shard_id: u64) -> Result<Arc<Shard>> {
-        let mut shard = Shard::load_shard(shard_id).await.unwrap();
-        let (rx, input_rx) = shard.setup_ch().await?;
+        let shard = Arc::new(Shard::load_shard(shard_id).await.unwrap());
 
-        let shard = Arc::new(shard);
-
-        shard.clone().start(rx, input_rx).await.unwrap();
+        shard.clone().switch_role_to_leader().await.unwrap();
 
         self.shards.write().insert(shard_id, shard.clone());
 
@@ -84,7 +81,6 @@ impl ShardManager {
             start_key.clone()..end_key.clone(),
         )
         .await?;
-        let (rx, input_rx) = new_shard.setup_ch().await?;
 
         let new_shard = Arc::new(new_shard);
 
@@ -102,7 +98,7 @@ impl ShardManager {
 
         shard.delete_range(&start_key, &end_key).await.unwrap();
 
-        new_shard.start(rx, input_rx).await?;
+        new_shard.switch_role_to_leader().await?;
 
         Ok(())
     }
@@ -120,7 +116,7 @@ impl ShardManager {
             shard_a.put(&key, &value).await.unwrap();
         }
 
-        shard_b.stop().await;
+        shard_b.stop_role().await;
 
         self.remove_shard(shard_id_b).await.unwrap();
         shard_b.remove_shard().await.unwrap();
