@@ -1,15 +1,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::Result;
 use once_cell::sync::Lazy;
-use tokio::sync::RwLock;
-use tonic::Request;
-use tracing::info;
 
-use idl_gen::service_pb::CreateShardRequest;
-
-use super::{Shard, ShardError};
+use super::Shard;
 use crate::wal::Wal;
 
 const DEFAULT_SHARD_CAPACITY: u64 = 10240;
@@ -25,14 +20,6 @@ impl ShardManager {
         return ShardManager {
             shards: Default::default(),
         };
-    }
-
-    pub async fn create_shard(req: &Request<CreateShardRequest>) -> Result<()> {
-        let shard_id = req.get_ref().shard_id;
-        Shard::create_shard(req).await?;
-        Wal::create_wal_dir(shard_id).await?;
-
-        Ok(())
     }
 
     async fn load_shard(&self, shard_id: u64) -> Result<Arc<Shard>> {
@@ -58,7 +45,7 @@ impl ShardManager {
             return Ok(());
         }
 
-        // self.shards.read().await.remove(&id);
+        self.shards.write().remove(&id);
 
         Ok(())
     }
@@ -93,10 +80,14 @@ impl ShardManager {
             let key = kv.0.to_owned();
             let value = kv.1.to_owned();
 
-            new_shard.put(&key, &value).await?;
+            new_shard.kv_store.kv_set(&key, &value).await?;
         }
 
-        shard.delete_range(&start_key, &end_key).await.unwrap();
+        shard
+            .kv_store
+            .kv_delete_range(&start_key, &end_key)
+            .await
+            .unwrap();
 
         new_shard.switch_role_to_leader().await?;
 
@@ -107,18 +98,18 @@ impl ShardManager {
         let shard_a = self.load_shard(shard_id_a).await.unwrap();
         let shard_b = self.load_shard(shard_id_b).await.unwrap();
 
-        let iter = shard_b.create_snapshot_iter().await.unwrap();
+        let iter = shard_b.kv_store.create_snapshot_iter().await.unwrap();
 
         for kv in iter.into_iter() {
             let key = kv.0.to_owned();
             let value = kv.1.to_owned();
 
-            shard_a.put(&key, &value).await.unwrap();
+            shard_a.kv_store.kv_set(&key, &value).await.unwrap();
         }
 
         shard_b.stop_role().await;
 
         self.remove_shard(shard_id_b).await.unwrap();
-        shard_b.remove_shard().await.unwrap();
+        Shard::remove_shard(shard_b.get_shard_id()).await.unwrap();
     }
 }

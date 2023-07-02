@@ -1,4 +1,3 @@
-use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time;
 
@@ -6,9 +5,9 @@ use anyhow::Result;
 use futures::StreamExt;
 use futures_util::stream;
 use tonic::{Request, Response, Status, Streaming};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
-use idl_gen::replog_pb::{self, Entry};
+use idl_gen::replog_pb;
 use idl_gen::service_pb::data_service_server::DataService;
 use idl_gen::service_pb::{
     migrate_shard_request, CancelTxRequest, CancelTxResponse, CommitTxRequest, CommitTxResponse,
@@ -24,7 +23,7 @@ use idl_gen::service_pb::{
 
 use crate::ds_client::CONNECTIONS;
 use crate::param_check;
-use crate::shard::{Shard, ShardError, ShardManager, SHARD_MANAGER};
+use crate::shard::{Shard, ShardError, KV_RANGE_LIMIT, SHARD_MANAGER};
 
 #[derive(Debug, Default)]
 pub struct RealDataServer {}
@@ -45,7 +44,8 @@ impl DataService for RealDataServer {
         let shard = self.get_shard(shard_id).await?;
 
         let value = shard
-            .get(&req.get_ref().key)
+            .kv_store
+            .kv_get(&req.get_ref().key)
             .await
             .map_err(|_| Status::not_found("no such key"))?;
 
@@ -73,18 +73,17 @@ impl DataService for RealDataServer {
             return Err(Status::unavailable("not leader"));
         }
 
-        let mut entry_notifier = shard
-            .process_write(Entry {
-                op: "put".into(),
-                key: req.get_ref().key.clone(),
-                value: req.get_ref().value.clone(),
-                ..Default::default()
-            })
+        let mut entry_with_notifier = shard
+            .process_write(
+                "put",
+                req.get_ref().key.clone(),
+                req.get_ref().value.clone(),
+            )
             .await
             .map_err(|_| Status::internal(""))?;
 
         info!("start wait result");
-        match entry_notifier.wait_result().await {
+        match entry_with_notifier.wait_result().await {
             Err(ShardError::NotLeader) => {
                 error!("wait failed: not leader");
                 return Ok(Response::new(ShardWriteResponse { not_leader: true }));
@@ -99,12 +98,7 @@ impl DataService for RealDataServer {
         info!("end wait result");
 
         shard
-            .apply_entry(&Entry {
-                op: "put".into(),
-                key: req.get_ref().key.clone(),
-                value: req.get_ref().value.clone(),
-                ..Default::default()
-            })
+            .apply_entry(&entry_with_notifier.entry)
             .await
             .map_err(|_| Status::internal("internal error"))?;
 
@@ -127,7 +121,12 @@ impl DataService for RealDataServer {
         }
 
         let kvs = shard
-            .scan(&req.get_ref().start_key, &req.get_ref().end_key)
+            .kv_store
+            .kv_scan(
+                &req.get_ref().start_key,
+                &req.get_ref().end_key,
+                KV_RANGE_LIMIT,
+            )
             .await
             .unwrap();
 
@@ -159,7 +158,7 @@ impl DataService for RealDataServer {
 
         let shard_id = req.get_ref().shard_id;
 
-        ShardManager::create_shard(&req)
+        Shard::create_shard(&req)
             .await
             .map_err(|e| Status::invalid_argument(format!("failed to create shard, {:?}", e)))?;
 
@@ -241,7 +240,7 @@ impl DataService for RealDataServer {
             return Ok(resp);
         }
 
-        shard.update_leader_change_ts(leader_change_leader_ts).await;
+        shard.update_leader_change_ts(leader_change_leader_ts);
 
         for e in req.get_ref().entries.iter() {
             let e = replog_pb::Entry {
@@ -289,8 +288,12 @@ impl DataService for RealDataServer {
                 return Err(Status::invalid_argument(""));
             }
 
-            shard.clear_data().await;
-            shard.kv_install_snapshot(&piece.data_piece).await.unwrap();
+            shard.kv_store.clear_data().await;
+            shard
+                .kv_store
+                .install_snapshot(&piece.data_piece)
+                .await
+                .unwrap();
         }
 
         shard.reset_replog(last_wal_index).unwrap();
@@ -319,11 +322,9 @@ impl DataService for RealDataServer {
             .map(|x| x.parse().unwrap())
             .collect::<Vec<_>>();
 
-        shard.set_replicates(&socket_addrs).await.unwrap();
-        shard.set_is_leader(true).await;
-        shard
-            .update_leader_change_ts(req.get_ref().leader_change_ts.to_owned().unwrap().into())
-            .await;
+        shard.set_replicates(&socket_addrs).unwrap();
+        shard.set_is_leader(true);
+        shard.update_leader_change_ts(req.get_ref().leader_change_ts.to_owned().unwrap().into());
 
         info!("successfully transfer shard leader");
 
@@ -376,7 +377,7 @@ impl DataService for RealDataServer {
 
         if first.direction == migrate_shard_request::Direction::From as i32 {
             let shard = self.get_shard(first.shard_id_from).await?;
-            let snap = shard.create_snapshot_iter().await.unwrap();
+            let snap = shard.kv_store.create_snapshot_iter().await.unwrap();
 
             let mut client = CONNECTIONS.get_client(first.target_address).await.unwrap();
 
@@ -407,7 +408,7 @@ impl DataService for RealDataServer {
 
             shard.mark_deleting();
             shard.stop_role().await;
-            shard.remove_shard().await.unwrap();
+            Shard::remove_shard(shard.get_shard_id()).await.unwrap();
 
             return Ok(Response::new(MigrateShardResponse {}));
         }
@@ -426,7 +427,7 @@ impl DataService for RealDataServer {
                 let shard = self.get_shard(first.shard_id_to).await?;
 
                 for kv in piece.entries.into_iter() {
-                    shard.put(&kv.key, &kv.value).await.unwrap();
+                    shard.kv_store.kv_set(&kv.key, &kv.value).await.unwrap();
                 }
             }
 

@@ -26,7 +26,9 @@ impl Wal {
         suffix
     }
 
-    fn generage_path(wal_dir: impl AsRef<Path>, shard_id: u64) -> PathBuf {
+    fn generage_path(shard_id: u64) -> PathBuf {
+        let wal_dir: PathBuf = CONFIG.read().wal_directory.as_ref().unwrap().into();
+
         info!("shard_id: 0x{:016x}", shard_id);
         let storage_id: u32 = ((shard_id & 0xFFFFFFFF_00000000) >> 32) as u32;
         let shard_isn: u32 = (shard_id & 0x00000000_FFFFFFFF) as u32;
@@ -36,24 +38,19 @@ impl Wal {
         );
 
         wal_dir
-            .as_ref()
             .join::<String>(format!("{:08x}", storage_id))
             .join::<String>(format!("{:08x}", shard_isn))
     }
 
     pub async fn create_wal_dir(shard_id: u64) -> Result<()> {
-        let wal_dir: PathBuf = CONFIG.read().wal_directory.as_ref().unwrap().into();
-
-        let wal_manager_dir = Self::generage_path(wal_dir, shard_id);
+        let wal_manager_dir = Self::generage_path(shard_id);
         create_dir_all(wal_manager_dir).await.unwrap();
 
         Ok(())
     }
 
     pub async fn load_wal_by_shard_id(shard_id: u64) -> Result<Wal> {
-        let wal_dir: PathBuf = CONFIG.read().wal_directory.as_ref().unwrap().into();
-
-        let wal_manager_dir = Self::generage_path(wal_dir, shard_id);
+        let wal_manager_dir = Self::generage_path(shard_id);
         return Wal::load(wal_manager_dir).await;
     }
 
@@ -121,8 +118,8 @@ impl Wal {
         return self.dir.clone().join(format!("wal.{}", suffix + 1));
     }
 
-    pub async fn remove_wal(&self) -> Result<()> {
-        remove_dir_all(self.dir.as_path()).await.unwrap();
+    pub async fn remove_wal(shard_id: u64) -> Result<()> {
+        remove_dir_all(Self::generage_path(shard_id)).await.unwrap();
         Ok(())
     }
 

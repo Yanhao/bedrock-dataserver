@@ -118,6 +118,10 @@ impl SledStore {
 
         Ok(())
     }
+
+    pub async fn clear_data(&self) {
+        todo!()
+    }
 }
 
 pub struct StoreIter {
@@ -148,7 +152,7 @@ impl SledStore {
         })
     }
 
-    pub async fn install_snapshot(&mut self, piece: &[u8]) -> Result<()> {
+    pub async fn install_snapshot(&self, piece: &[u8]) -> Result<()> {
         let piece = piece.to_owned();
         let mut ps = piece.split(|b| *b == '\n' as u8);
 
