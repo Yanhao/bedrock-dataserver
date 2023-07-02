@@ -94,22 +94,24 @@ impl ShardManager {
         Ok(())
     }
 
-    pub async fn merge_shard(&self, shard_id_a: u64, shard_id_b: u64) {
-        let shard_a = self.load_shard(shard_id_a).await.unwrap();
-        let shard_b = self.load_shard(shard_id_b).await.unwrap();
+    pub async fn merge_shard(&self, shard_id_a: u64, shard_id_b: u64) -> Result<()> {
+        let shard_a = self.load_shard(shard_id_a).await?;
+        let shard_b = self.load_shard(shard_id_b).await?;
 
-        let iter = shard_b.kv_store.create_snapshot_iter().await.unwrap();
+        let iter = shard_b.kv_store.create_snapshot_iter().await?;
 
         for kv in iter.into_iter() {
             let key = kv.0.to_owned();
             let value = kv.1.to_owned();
 
-            shard_a.kv_store.kv_set(&key, &value).await.unwrap();
+            shard_a.kv_store.kv_set(&key, &value).await?;
         }
 
-        shard_b.stop_role().await;
+        shard_b.stop_role().await?;
 
         self.remove_shard(shard_id_b).await.unwrap();
-        Shard::remove_shard(shard_b.get_shard_id()).await.unwrap();
+        Shard::remove_shard(shard_b.get_shard_id()).await?;
+
+        Ok(())
     }
 }

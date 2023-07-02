@@ -371,13 +371,15 @@ impl DataService for RealDataServer {
                 .unwrap();
 
             shard.mark_deleting();
-            shard.stop_role().await;
+            shard.stop_role().await.unwrap();
             Shard::remove_shard(shard.get_shard_id()).await.unwrap();
 
             return Ok(Response::new(MigrateShardResponse {}));
         }
 
         if first.direction == migrate_shard_request::Direction::To as i32 {
+            let shard = self.get_shard(first.shard_id_to).await?;
+
             while let Some(result) = in_stream.next().await {
                 if let Err(_) = result {
                     break;
@@ -387,8 +389,6 @@ impl DataService for RealDataServer {
                 if !param_check::migrate_shard_param_check(&piece) {
                     return Err(Status::invalid_argument(""));
                 }
-
-                let shard = self.get_shard(first.shard_id_to).await?;
 
                 for kv in piece.entries.into_iter() {
                     shard.kv_store.kv_set(&kv.key, &kv.value).await.unwrap();
@@ -411,7 +411,8 @@ impl DataService for RealDataServer {
 
         SHARD_MANAGER
             .split_shard(req.get_ref().shard_id, req.get_ref().new_shard_id)
-            .await;
+            .await
+            .unwrap();
 
         info!(
             "split shard successfully, shard_id: {}, new_shard_id: {}",
