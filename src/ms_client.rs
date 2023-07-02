@@ -3,12 +3,13 @@ use futures_util::stream;
 use once_cell::sync::Lazy;
 use tracing::{info, warn};
 
+use idl_gen::metaserver_pb::sync_shard_in_data_server_request::SyncShardInfo;
+use idl_gen::metaserver_pb::{meta_service_client, HeartBeatRequest, SyncShardInDataServerRequest};
+use idl_gen::service_pb::ShardMeta;
+
 use crate::config::get_self_socket_addr;
 use crate::metadata::ShardMetaIter;
 use crate::metadata::METADATA;
-use crate::metaserver_pb::sync_shard_in_data_server_request::SyncShardInfo;
-use crate::metaserver_pb::{meta_service_client, HeartBeatRequest, SyncShardInDataServerRequest};
-use crate::service_pb::ShardMeta;
 
 pub static MS_CLIENT: Lazy<MsClient> = Lazy::new(|| MsClient::new());
 

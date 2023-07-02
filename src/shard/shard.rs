@@ -15,13 +15,14 @@ use tokio::sync::{mpsc, RwLock};
 use tonic::Request;
 use tracing::{error, info, warn};
 
-use crate::connections::CONNECTIONS;
-use crate::kv_store::{self, SledStore};
-use crate::replog_pb::Entry;
-use crate::service_pb::{
+use idl_gen::replog_pb::Entry;
+use idl_gen::service_pb::{
     data_service_client, shard_append_log_request, CreateShardRequest, ShardAppendLogRequest,
     ShardInstallSnapshotRequest, ShardMeta,
 };
+
+use crate::ds_client::CONNECTIONS;
+use crate::kv_store::{self, SledStore};
 use crate::shard::{order_keeper::OrderKeeper, ShardError};
 use crate::wal::{Wal, WalTrait};
 

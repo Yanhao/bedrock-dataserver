@@ -7,7 +7,7 @@ use tokio::sync::RwLock;
 use tonic::transport::Channel;
 use tracing::info;
 
-use crate::service_pb::data_service_client;
+use idl_gen::service_pb::data_service_client;
 
 pub static CONNECTIONS: Lazy<Connections> = Lazy::new(|| Connections::new());
 

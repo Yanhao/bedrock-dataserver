@@ -8,10 +8,11 @@ use tonic::transport::Server as GrpcServer;
 use tracing::{debug, error, info};
 use tracing_subscriber;
 
+use idl_gen::service_pb::data_service_server::DataServiceServer;
+
 use dataserver::config::{config_mod_init, CONFIG, CONFIG_DIR};
 use dataserver::format::Formatter;
 use dataserver::handler::RealDataServer;
-use dataserver::service_pb::data_service_server::DataServiceServer;
 
 fn create_lock_file(path: impl AsRef<Path>) -> Result<()> {
     let lock_path = path.as_ref().to_path_buf().join("LOCK");

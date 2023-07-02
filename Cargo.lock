@@ -372,13 +372,13 @@ dependencies = [
  "futures",
  "futures-util",
  "get_if_addrs",
+ "idl-gen",
  "lazy_static",
  "libc",
  "num-bigint",
  "once_cell",
  "parking_lot 0.12.1",
  "prost 0.7.0",
- "prost-build",
  "prost-types 0.7.0",
  "protobuf",
  "raft",
@@ -391,7 +391,6 @@ dependencies = [
  "tokio",
  "toml",
  "tonic 0.4.3",
- "tonic-build",
  "tracing",
  "tracing-subscriber",
 ]
@@ -805,6 +804,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f31827a206f56af32e590ba56d5d2d085f558508192593743f16b2306495269f"
 dependencies = [
  "cc",
+]
+
+[[package]]
+name = "idl-gen"
+version = "0.1.0"
+dependencies = [
+ "prost 0.7.0",
+ "prost-build",
+ "prost-types 0.7.0",
+ "tonic 0.4.3",
+ "tonic-build",
 ]
 
 [[package]]

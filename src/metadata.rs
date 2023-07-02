@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use sled;
 use tracing::{debug, warn};
 
-use crate::service_pb::ShardMeta;
+use idl_gen::service_pb::ShardMeta;
 
 const METADATA_PATH: &str = "metadata.json";
 const METADATA_DIRECTORY: &str = "metadata";

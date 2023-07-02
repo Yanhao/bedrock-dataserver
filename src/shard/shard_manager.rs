@@ -7,10 +7,10 @@ use tokio::sync::RwLock;
 use tonic::Request;
 use tracing::info;
 
-use crate::service_pb::CreateShardRequest;
-use crate::wal::Wal;
+use idl_gen::service_pb::CreateShardRequest;
 
 use super::{Shard, ShardError};
+use crate::wal::Wal;
 
 const DEFAULT_SHARD_CAPACITY: u64 = 10240;
 

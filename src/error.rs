@@ -1,9 +1,10 @@
 use thiserror::Error;
 
 #[derive(Error, Debug)]
+#[repr(i32)]
 pub enum DataServerError {
     #[error("failed to stop tcp server")]
-    FailedToStopTcpServer,
+    FailedToStopTcpServer = 1,
     #[error("connection closed")]
     ConnectionClosed,
     #[error("failed to receive")]

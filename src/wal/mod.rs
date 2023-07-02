@@ -2,7 +2,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use thiserror::Error;
 
-use crate::replog_pb::Entry;
+use idl_gen::replog_pb::Entry;
 
 mod mem_log;
 mod wal;

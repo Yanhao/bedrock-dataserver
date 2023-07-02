@@ -11,7 +11,7 @@ use tracing::{debug, error, info};
 
 use crate::error::DataServerError;
 
-// the location of aproject configuration directory.
+// the location of dataserver configuration directory.
 pub const CONFIG_DIR: &str = "/etc/bedrock-dataserver";
 
 pub static CONFIG: Lazy<RwLock<Configuration>> = Lazy::new(|| Default::default());
@@ -47,7 +47,7 @@ pub struct Configuration {
 }
 
 impl Configuration {
-    // parsing the configuration file, default configuration file location is: /etc/aproject/config.toml
+    // parsing the configuration file, default configuration file location is: /etc/bedrock/config.toml
     pub fn parse_config_file(file: &str) -> Result<Configuration> {
         info!("parsing configuration file: {}", file);
 

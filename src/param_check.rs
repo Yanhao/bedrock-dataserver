@@ -2,7 +2,7 @@ use std::net::{AddrParseError, SocketAddr};
 
 use tracing::warn;
 
-use crate::service_pb::{
+use idl_gen::service_pb::{
     CreateShardRequest, DeleteShardRequest, LockRangeRequest, LockRecordRequest, MergeShardRequest,
     MigrateShardRequest, ShardAppendLogRequest, ShardInfoRequest, ShardInstallSnapshotRequest,
     ShardReadRequest, ShardScanRequest, ShardWriteRequest, SplitShardRequest,

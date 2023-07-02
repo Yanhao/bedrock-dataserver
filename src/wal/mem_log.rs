@@ -4,7 +4,7 @@ use prost::Message;
 use thiserror::Error;
 use tracing::warn;
 
-use crate::replog_pb::Entry;
+use idl_gen::replog_pb::Entry;
 
 use super::WalTrait;
 

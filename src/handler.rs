@@ -8,11 +8,9 @@ use futures_util::stream;
 use tonic::{Request, Response, Status, Streaming};
 use tracing::{debug, error, info, warn};
 
-use crate::connections::CONNECTIONS;
-use crate::param_check;
-use crate::replog_pb::{self, Entry};
-use crate::service_pb::data_service_server::DataService;
-use crate::service_pb::{
+use idl_gen::replog_pb::{self, Entry};
+use idl_gen::service_pb::data_service_server::DataService;
+use idl_gen::service_pb::{
     migrate_shard_request, CancelTxRequest, CancelTxResponse, CommitTxRequest, CommitTxResponse,
     CreateShardRequest, CreateShardResponse, DeleteShardRequest, KeyValue, LockRangeRequest,
     LockRangeResponse, LockRecordRequest, LockRecordResponse, MergeShardRequest,
@@ -23,6 +21,9 @@ use crate::service_pb::{
     SplitShardRequest, SplitShardResponse, StartTxRequest, StartTxResponse,
     TransferShardLeaderRequest, TransferShardLeaderResponse,
 };
+
+use crate::ds_client::CONNECTIONS;
+use crate::param_check;
 use crate::shard::{Shard, ShardError, ShardManager, SHARD_MANAGER};
 
 #[derive(Debug, Default)]
