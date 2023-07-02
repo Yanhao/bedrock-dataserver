@@ -4,9 +4,7 @@ use parking_lot::RwLock;
 use tokio::{select, sync::mpsc};
 use tracing::{info, warn};
 
-use crate::config::get_self_socket_addr;
-use crate::metadata::METADATA;
-use crate::metaserver_pb::{meta_service_client, HeartBeatRequest};
+use crate::ms_client::MS_CLIENT;
 
 pub static HEART_BEATER: Lazy<RwLock<HeartBeater>> = Lazy::new(|| Default::default());
 
@@ -29,31 +27,7 @@ impl HeartBeater {
                         break;
                     }
                     _ = ticker.tick() => {
-                        let meta = METADATA.read().get_meta();
-                        let addr = meta.metaserver_leader;
-
-                        info!("heartbeat to metaserver ... metaserver addr: {}", addr);
-                        let mut client = match  meta_service_client::MetaServiceClient::connect(addr.clone()).await {
-                            Err(e) => {
-                                warn!("failed to connect to {}, err: {:?}", addr, e);
-                                continue;
-                            },
-                            Ok(v) => v
-                        };
-
-                        let req = tonic::Request::new(HeartBeatRequest{
-                            addr: get_self_socket_addr().to_string(),
-                            restarting: false,
-                        });
-
-                        match client.heart_beat(req).await {
-                            Err(e) => {
-                                warn!("failed to heart beat to {}, err: {:?}", addr, e);
-                            },
-                            Ok(resp) => {
-                                info!("heartbeat response: {:?}", resp);
-                            }
-                        }
+                        MS_CLIENT.heartbeat(false).await;
                     }
                 }
             }

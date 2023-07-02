@@ -32,7 +32,7 @@ pub mod kv_store;
 pub mod metadata;
 mod ms_client;
 pub mod param_check;
-pub mod service_handler;
+pub mod handler;
 pub mod shard;
 mod shutdown;
 pub mod sync_shard;

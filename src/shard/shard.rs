@@ -10,6 +10,7 @@ use futures_util::stream;
 use num_bigint::{BigUint, ToBigUint};
 use parking_lot;
 use prost::Message;
+use tokio::sync::mpsc::Receiver;
 use tokio::sync::{mpsc, RwLock};
 use tonic::Request;
 use tracing::{error, info, warn};
@@ -54,7 +55,7 @@ pub struct Shard {
     rep_log: Arc<RwLock<Wal>>,
 
     next_index: AtomicU64,
-    order_keeper: OrderKeeper,
+    order_keeper: RwLock<OrderKeeper>,
 
     deleting: AtomicBool,
     installing_snapshot: AtomicBool,
@@ -73,7 +74,7 @@ impl Shard {
             deleting: false.into(),
             installing_snapshot: false.into(),
             next_index: next_index.into(),
-            order_keeper: OrderKeeper::new(),
+            order_keeper: RwLock::new(OrderKeeper::new()),
             input: None,
             stop_ch: None,
         };
@@ -247,7 +248,7 @@ impl Shard {
     }
 
     pub async fn remove_wal(&self) -> Result<()> {
-        self.rep_log.read().await.remove_wal().await;
+        self.rep_log.read().await.remove_wal().await?;
         Ok(())
     }
 }
@@ -364,13 +365,21 @@ impl Shard {
 }
 
 impl Shard {
-    pub async fn start(self: Arc<Self>) -> Result<()> {
-        let (tx, mut rx) = mpsc::channel::<()>(1);
-        // self.stop_ch.replace(tx);
+    pub async fn setup_ch(&mut self) -> Result<(Receiver<()>, Receiver<EntryWithNotifierSender>)> {
+        let (tx, rx) = mpsc::channel::<()>(1);
+        self.stop_ch.replace(tx);
 
-        let (input_tx, mut input_rx) = mpsc::channel::<EntryWithNotifierSender>(INPUT_CHANNEL_LEN);
-        // self.input.replace(input_tx);
+        let (input_tx, input_rx) = mpsc::channel::<EntryWithNotifierSender>(INPUT_CHANNEL_LEN);
+        self.input.replace(input_tx);
 
+        Ok((rx, input_rx))
+    }
+
+    pub async fn start(
+        self: Arc<Self>,
+        mut rx: Receiver<()>,
+        mut input_rx: Receiver<EntryWithNotifierSender>,
+    ) -> Result<()> {
         let rep_log = self.rep_log.clone();
         let shard = self.clone();
 
@@ -443,7 +452,11 @@ impl Shard {
         let (tx, rx) = mpsc::channel(3);
 
         info!("ensure order, index: {}", entry.index);
-        // self.order_keeper.ensure_order(entry.index).await?;
+        self.order_keeper
+            .write()
+            .await
+            .ensure_order(entry.index)
+            .await?;
 
         // TODO: use group commit to improve performance
         self.rep_log
@@ -461,7 +474,11 @@ impl Shard {
             .await?;
         }
 
-        // self.order_keeper.pass_order(entry.index).await;
+        self.order_keeper
+            .write()
+            .await
+            .pass_order(entry.index)
+            .await;
         info!("pass order, index: {}", entry.index);
 
         Ok(EntryWithNotifierReceiver {
@@ -470,8 +487,12 @@ impl Shard {
         })
     }
 
-    pub async fn apply_entry(&self, entry: Entry) -> Result<()> {
-        // self.order_keeper.ensure_order(entry.index).await?;
+    pub async fn append_log_entry(&self, entry: &Entry) -> Result<()> {
+        self.order_keeper
+            .write()
+            .await
+            .ensure_order(entry.index)
+            .await?;
 
         // TODO: use group commit to improve performance
         self.rep_log
@@ -481,8 +502,16 @@ impl Shard {
             .await
             .unwrap();
 
-        // self.order_keeper.pass_order(entry.index).await;
+        self.order_keeper
+            .write()
+            .await
+            .pass_order(entry.index)
+            .await;
 
+        Ok(())
+    }
+
+    pub async fn apply_entry(&self, entry: &Entry) -> Result<()> {
         if entry.op == "put" {
             self.put(&entry.key, &entry.value).await.unwrap();
         }
@@ -497,12 +526,7 @@ impl Shard {
         replog: Arc<RwLock<Wal>>,
     ) -> std::result::Result<(), ShardError> {
         let shard_id = shard.get_shard_id();
-        let client = CONNECTIONS
-            .write()
-            .await
-            .get_conn(addr.clone())
-            .await
-            .unwrap();
+        let mut client = CONNECTIONS.get_client(addr.clone()).await.unwrap();
 
         let request = Request::new(ShardAppendLogRequest {
             shard_id,
@@ -515,7 +539,7 @@ impl Shard {
             }],
         });
 
-        let resp = match client.write().await.shard_append_log(request).await {
+        let resp = match client.shard_append_log(request).await {
             Err(e) => {
                 warn!("failed to  append_log, err {}", e);
                 return Err(ShardError::FailedToAppendLog);
@@ -570,7 +594,7 @@ impl Shard {
                     .collect(),
             });
 
-            let resp = match client.write().await.shard_append_log(request).await {
+            let resp = match client.shard_append_log(request).await {
                 Err(e) => {
                     warn!("failed to append_log, err: {}", e);
                     return Err(ShardError::FailedToAppendLog);
@@ -588,7 +612,7 @@ impl Shard {
 
     async fn install_snapshot_to(
         shard: Arc<Shard>,
-        client: Arc<RwLock<data_service_client::DataServiceClient<tonic::transport::Channel>>>,
+        mut client: data_service_client::DataServiceClient<tonic::transport::Channel>,
     ) -> Result<u64 /*last_wal_index */> {
         let shard_id = shard.get_shard_id();
 
@@ -615,8 +639,6 @@ impl Shard {
         }
 
         client
-            .write()
-            .await
             .shard_install_snapshot(Request::new(stream::iter(req_stream)))
             .await
             .unwrap();

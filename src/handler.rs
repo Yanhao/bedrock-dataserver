@@ -74,10 +74,10 @@ impl DataService for RealDataServer {
 
         let mut entry_notifier = shard
             .process_write(Entry {
-                index: 0,
                 op: "put".into(),
                 key: req.get_ref().key.clone(),
                 value: req.get_ref().value.clone(),
+                ..Default::default()
             })
             .await
             .map_err(|_| Status::internal(""))?;
@@ -98,7 +98,12 @@ impl DataService for RealDataServer {
         info!("end wait result");
 
         shard
-            .put(&req.get_ref().key, &req.get_ref().value)
+            .apply_entry(&Entry {
+                op: "put".into(),
+                key: req.get_ref().key.clone(),
+                value: req.get_ref().value.clone(),
+                ..Default::default()
+            })
             .await
             .map_err(|_| Status::internal("internal error"))?;
 
@@ -238,15 +243,14 @@ impl DataService for RealDataServer {
         shard.update_leader_change_ts(leader_change_leader_ts).await;
 
         for e in req.get_ref().entries.iter() {
-            shard
-                .apply_entry(replog_pb::Entry {
-                    op: e.op.clone(),
-                    index: e.index,
-                    key: e.key.clone(),
-                    value: e.value.clone(),
-                })
-                .await
-                .unwrap();
+            let e = replog_pb::Entry {
+                op: e.op.clone(),
+                index: e.index,
+                key: e.key.clone(),
+                value: e.value.clone(),
+            };
+            shard.append_log_entry(&e).await.unwrap();
+            shard.apply_entry(&e).await.unwrap();
         }
 
         let last_index = shard.get_last_index().await;
@@ -373,12 +377,7 @@ impl DataService for RealDataServer {
             let shard = self.get_shard(first.shard_id_from).await?;
             let snap = shard.create_snapshot_iter().await.unwrap();
 
-            let client = CONNECTIONS
-                .write()
-                .await
-                .get_conn(first.target_address)
-                .await
-                .unwrap();
+            let mut client = CONNECTIONS.get_client(first.target_address).await.unwrap();
 
             let mut req_stream = vec![MigrateShardRequest {
                 shard_id_from: first.shard_id_from,
@@ -401,8 +400,6 @@ impl DataService for RealDataServer {
             }
 
             client
-                .write()
-                .await
                 .migrate_shard(Request::new(stream::iter(req_stream)))
                 .await
                 .unwrap();

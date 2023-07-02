@@ -36,9 +36,12 @@ impl ShardManager {
     }
 
     async fn load_shard(&self, shard_id: u64) -> Result<Arc<Shard>> {
-        let shard = Arc::new(Shard::load_shard(shard_id).await.unwrap());
+        let mut shard = Shard::load_shard(shard_id).await.unwrap();
+        let (rx, input_rx) = shard.setup_ch().await?;
 
-        shard.clone().start().await.unwrap();
+        let shard = Arc::new(shard);
+
+        shard.clone().start(rx, input_rx).await.unwrap();
 
         self.shards.write().insert(shard_id, shard.clone());
 
@@ -63,7 +66,7 @@ impl ShardManager {
         Ok(())
     }
 
-    pub async fn split_shard(&self, shard_id: u64, new_shard_id: u64) {
+    pub async fn split_shard(&self, shard_id: u64, new_shard_id: u64) -> Result<()> {
         let shard = self.load_shard(shard_id).await.unwrap();
 
         let replicates = shard.get_replicates();
@@ -73,17 +76,17 @@ impl ShardManager {
         let start_key = shard.middle_key();
         let end_key = shard.max_key();
 
-        let new_shard = Arc::new(
-            Shard::create_shard_for_split(
-                new_shard_id,
-                leader,
-                replicates,
-                last_wal_index,
-                start_key.clone()..end_key.clone(),
-            )
-            .await
-            .unwrap(),
-        );
+        let mut new_shard = Shard::create_shard_for_split(
+            new_shard_id,
+            leader,
+            replicates,
+            last_wal_index,
+            start_key.clone()..end_key.clone(),
+        )
+        .await?;
+        let (rx, input_rx) = new_shard.setup_ch().await?;
+
+        let new_shard = Arc::new(new_shard);
 
         Wal::create_wal_dir(shard_id).await.unwrap();
 
@@ -94,12 +97,14 @@ impl ShardManager {
             let key = kv.0.to_owned();
             let value = kv.1.to_owned();
 
-            new_shard.put(&key, &value).await;
+            new_shard.put(&key, &value).await?;
         }
 
         shard.delete_range(&start_key, &end_key).await.unwrap();
 
-        new_shard.start().await.unwrap();
+        new_shard.start(rx, input_rx).await?;
+
+        Ok(())
     }
 
     pub async fn merge_shard(&self, shard_id_a: u64, shard_id_b: u64) {

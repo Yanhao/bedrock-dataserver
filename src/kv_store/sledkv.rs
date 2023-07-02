@@ -8,7 +8,7 @@ use tracing::{debug, info};
 
 use crate::config::CONFIG;
 
-use super::error;
+use super::KvStoreError;
 
 pub struct SledStore {
     pub db: sled::Db,
@@ -60,12 +60,12 @@ impl SledStore {
     pub async fn kv_get(&self, key: &[u8]) -> Result<Vec<u8>> {
         let iv = match self.db.get(key) {
             Err(e) => {
-                bail!(error::KvStoreError::DbInternalError);
+                bail!(KvStoreError::DbInternalError);
             }
             Ok(v) => v,
         };
         if iv.is_none() {
-            bail!(error::KvStoreError::NoSuchkey);
+            bail!(KvStoreError::NoSuchkey);
         }
         let v = iv.unwrap();
         Ok(v.as_ref().to_owned())
