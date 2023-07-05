@@ -1,4 +1,5 @@
 raft_server_addr = "0.0.0.0:1000"
-work_directory = "."
 rpc_server_addr = "0.0.0.0:3383"
+work_directory = "."
 wal_directory = "./wal"
+data_directory = "./data"

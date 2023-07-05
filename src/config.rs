@@ -39,11 +39,11 @@ pub struct Configuration {
     pub raft_server_addr: Option<String>,
     pub rpc_server_addr: Option<String>,
 
-    pub daemon: Option<bool>,
     pub work_directory: Option<String>,
     pub disk_type: Option<DiskType>,
     pub managers: Option<Vec<String>>,
     pub wal_directory: Option<String>,
+    pub data_directory: Option<String>,
 }
 
 impl Configuration {
@@ -106,7 +106,6 @@ mod tests {
 
         let config1 = config1_res.unwrap();
 
-        assert_eq!(config1.daemon.unwrap(), true);
         assert_eq!(config1.work_directory.unwrap(), "/");
         // assert_eq!(config1.disk_type.unwrap(), DiskType::SSD);
         assert_eq!(config1.rpc_server_addr.unwrap(), "0.0.0.0:8888");
