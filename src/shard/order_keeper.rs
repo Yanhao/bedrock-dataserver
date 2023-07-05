@@ -3,6 +3,7 @@ use std::{cmp::Ordering, collections::BinaryHeap};
 
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::Mutex;
+use tracing::info;
 
 use super::ShardError;
 
@@ -98,6 +99,7 @@ impl OrderKeeper {
             return Err(ShardError::IgnoreOrder);
         }
 
+        info!("next_order: {}, ensure_order: {}", self.next_order, order);
         if self.next_order == order {
             return Ok(());
         }
@@ -119,6 +121,7 @@ impl OrderKeeper {
 
     pub async fn pass_order(&mut self, order: OrderType) {
         self.next_order = order + 1;
+        info!("next_order: {}", self.next_order);
 
         if self.queue.len() != 0 && self.queue.peek().unwrap().order == self.next_order {
             let item = self.queue.peek().unwrap().notifier.clone();

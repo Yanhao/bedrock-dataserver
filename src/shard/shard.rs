@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time;
 use std::vec::Vec;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use arc_swap::ArcSwapOption;
 use futures_util::stream;
 use num_bigint::{BigUint, ToBigUint};
@@ -21,6 +21,7 @@ use idl_gen::service_pb::{
     ShardInstallSnapshotRequest, ShardMeta,
 };
 
+use crate::config::get_self_socket_addr;
 use crate::ds_client::CONNECTIONS;
 use crate::kv_store::{self, SledStore};
 use crate::role::{Follower, Leader, Role};
@@ -67,6 +68,10 @@ pub struct Shard {
 impl Shard {
     fn new(kv_store: kv_store::SledStore, meta: ShardMeta, wal: Wal) -> Self {
         let next_index = wal.last_index() + 1;
+        info!("next_index: {next_index}");
+
+        let mut order_keeper = OrderKeeper::new();
+        order_keeper.set_next_order(next_index);
 
         return Shard {
             shard_meta: Arc::new(parking_lot::RwLock::new(meta)),
@@ -75,8 +80,8 @@ impl Shard {
             deleting: false.into(),
             installing_snapshot: false.into(),
             next_index: next_index.into(),
-            order_keeper: RwLock::new(OrderKeeper::new()),
             input: None.into(),
+            order_keeper: RwLock::new(order_keeper),
 
             role: RwLock::new(Role::NotReady),
         };
@@ -86,10 +91,9 @@ impl Shard {
         let shard_id = req.get_ref().shard_id;
 
         let sled_db = kv_store::SledStore::create(shard_id).await.unwrap();
-
         let meta = ShardMeta {
             shard_id,
-            is_leader: false,
+            is_leader: get_self_socket_addr().to_string() == req.get_ref().leader,
             create_ts: req.get_ref().create_ts.to_owned().unwrap().into(),
             leader: req.get_ref().leader.clone(),
             leader_change_ts: req.get_ref().leader_change_ts.to_owned().unwrap().into(),
@@ -162,6 +166,7 @@ impl Shard {
         let raw_meta = sled_db.kv_get(meta_key).await.unwrap();
         let meta = ShardMeta::decode(raw_meta.as_slice()).unwrap();
         let wal = Wal::load_wal_by_shard_id(shard_id).await.unwrap();
+        info!("shard meta: {:?}", meta);
 
         Ok(Self::new(sled_db, meta, wal))
     }
@@ -359,11 +364,16 @@ impl Shard {
     }
 
     pub async fn append_log_entry(&self, entry: &Entry) -> Result<()> {
-        self.order_keeper
-            .write()
-            .await
-            .ensure_order(entry.index)
-            .await?;
+        // self.order_keeper
+        //     .write()
+        //     .await
+        //     .ensure_order(entry.index)
+        //     .await?;
+
+        let last_index = self.replog.read().await.last_index() + 1;
+        if last_index != entry.index {
+            bail!(ShardError::LogIndexLag(last_index));
+        }
 
         // TODO: use group commit to improve performance
         self.replog
@@ -373,11 +383,11 @@ impl Shard {
             .await
             .unwrap();
 
-        self.order_keeper
-            .write()
-            .await
-            .pass_order(entry.index)
-            .await;
+        // self.order_keeper
+        //     .write()
+        //     .await
+        //     .pass_order(entry.index)
+        //     .await;
 
         Ok(())
     }
@@ -428,7 +438,7 @@ impl Shard {
         let mut last_applied_index = resp.get_ref().last_applied_index;
         info!("last_applied_index from {}, {}", addr, last_applied_index);
 
-        for i in 1..=3 {
+        for _i in 1..=3 {
             if last_applied_index >= en.index {
                 return Ok(());
             }

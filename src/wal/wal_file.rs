@@ -19,6 +19,7 @@ const WAL_MAGIC: u64 = 0x12345;
 #[repr(C, packed)]
 pub struct WalEntryMeta {
     pub entry_offset: u64,
+    pub entry_length: u64,
     pub version: u64,
 } // 16 byte fixed
 
@@ -114,14 +115,15 @@ impl WalFile {
             bail!(WalError::FailedToRead);
         }
 
-        let mut metas = vec![];
-        metas.resize(
-            footer.entry_count as usize,
-            WalEntryMeta {
+        let mut metas = {
+            let meta = WalEntryMeta {
                 entry_offset: 0,
+                entry_length: 0,
                 version: 0,
-            },
-        );
+            };
+            vec![meta; footer.entry_count as usize]
+        };
+
         let metas_data = unsafe {
             slice::from_raw_parts_mut(
                 &mut metas as *mut _ as *mut u8,
@@ -199,6 +201,7 @@ impl WalFile {
             metas.push(WalEntryMeta {
                 version: entry_header.version,
                 entry_offset: entry_header.offset,
+                entry_length: entry_header.entry_length,
             });
 
             wal_entry_offset += std::mem::size_of::<WalEntryHeader>() as u64;
@@ -258,6 +261,7 @@ impl WalFile {
 
         let meta = WalEntryMeta {
             entry_offset: self.next_entry_offset,
+            entry_length: ent.encoded_len() as u64,
             version: ent.index,
         };
 
@@ -446,20 +450,19 @@ impl WalFile {
         let start_index = start_version - self.start_version;
         let end_index = self.end_version - end_version;
 
-        let target_meta = &(self.wal_entry_index)[start_index as usize..(end_index + 1) as usize];
+        let target_meta = &(self.wal_entry_index)[start_index as usize..={ end_index as usize }];
 
         let mut ret = vec![];
         for m in target_meta.iter() {
-            self.file
-                .seek(SeekFrom::Start(m.entry_offset))
-                .await
-                .unwrap(); // TODO error
+            self.file.seek(SeekFrom::Start(m.entry_offset)).await?;
 
-            let mut buf = vec![];
-            buf.resize(std::mem::size_of::<WalEntryMeta>(), 0);
-            self.file.read(&mut buf).await.unwrap();
+            let mut buf = vec![0; std::mem::size_of::<WalEntryHeader>() + m.entry_length as usize];
+            self.file.read(&mut buf).await?;
+
+            info!("buf len: {}", buf.len());
 
             let header_len = std::mem::size_of::<WalEntryHeader>();
+            info!("header len: {}", header_len);
             let entry_header: WalEntryHeader =
                 unsafe { std::ptr::read(buf[0..header_len].as_ptr() as *const _) };
 

@@ -249,7 +249,15 @@ impl DataService for RealDataServer {
                 key: e.key.clone(),
                 value: e.value.clone(),
             };
-            shard.append_log_entry(&e).await.unwrap();
+            if let Err(e) = shard.append_log_entry(&e).await {
+                if let Some(ShardError::LogIndexLag(last_index)) = e.downcast_ref() {
+                    return Ok(Response::new(ShardAppendLogResponse {
+                        is_old_leader: false,
+                        last_applied_index: *last_index,
+                    }));
+                }
+            }
+
             shard.apply_entry(&e).await.unwrap();
         }
 
@@ -288,7 +296,7 @@ impl DataService for RealDataServer {
                 return Err(Status::invalid_argument(""));
             }
 
-            shard.kv_store.clear_data().await;
+            // shard.kv_store.clear_data().await;
             shard
                 .kv_store
                 .install_snapshot(&piece.data_piece)
@@ -324,6 +332,12 @@ impl DataService for RealDataServer {
 
         shard.set_replicates(&socket_addrs).unwrap();
         shard.set_is_leader(true);
+        shard.save_meta().await.map_err(|_| {
+            Status::internal(
+                "save shard meta faile
+d",
+            )
+        })?;
         shard.update_leader_change_ts(req.get_ref().leader_change_ts.to_owned().unwrap().into());
         shard.switch_role_to_leader().await.unwrap();
 

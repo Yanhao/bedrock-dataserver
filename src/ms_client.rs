@@ -1,7 +1,7 @@
 use anyhow::Result;
 use futures_util::stream;
 use once_cell::sync::Lazy;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use idl_gen::metaserver_pb::sync_shard_in_data_server_request::SyncShardInfo;
 use idl_gen::metaserver_pb::{meta_service_client, HeartBeatRequest, SyncShardInDataServerRequest};
@@ -74,7 +74,7 @@ pub struct MsClient {}
 
 impl MsClient {
     pub fn new() -> Self {
-        todo!()
+        Self{}
     }
 
     fn get_ms_addr(&self) -> String {
@@ -99,7 +99,7 @@ impl MsClient {
                 warn!("failed to heart beat to {}, err: {:?}", addr, e);
             }
             Ok(resp) => {
-                info!("heartbeat response: {:?}", resp);
+                debug!("heartbeat response: {:?}", resp);
             }
         }
 

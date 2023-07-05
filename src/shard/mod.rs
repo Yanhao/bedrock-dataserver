@@ -28,4 +28,7 @@ pub enum ShardError {
 
     #[error("append log failed")]
     FailedToAppendLog,
+
+    #[error("log index lag")]
+    LogIndexLag(u64),
 }
