@@ -19,7 +19,7 @@ pub struct Wal {
 }
 
 impl Wal {
-    pub fn suffix(path: impl AsRef<Path>) -> u64 {
+    fn suffix(path: impl AsRef<Path>) -> u64 {
         let path = path.as_ref().as_os_str().to_str().unwrap();
         let suffix_str = path.split(".").last().unwrap();
         let suffix = suffix_str.parse().unwrap();
@@ -40,18 +40,6 @@ impl Wal {
         wal_dir
             .join::<String>(format!("{:08x}", storage_id))
             .join::<String>(format!("{:08x}", shard_isn))
-    }
-
-    pub async fn create_wal_dir(shard_id: u64) -> Result<()> {
-        let wal_manager_dir = Self::generage_path(shard_id);
-        create_dir_all(wal_manager_dir).await.unwrap();
-
-        Ok(())
-    }
-
-    pub async fn load_wal_by_shard_id(shard_id: u64) -> Result<Wal> {
-        let wal_manager_dir = Self::generage_path(shard_id);
-        return Wal::load(wal_manager_dir).await;
     }
 
     async fn load(dir: impl AsRef<Path>) -> Result<Wal> {
@@ -107,6 +95,18 @@ impl Wal {
             wal_files,
             dir: dir.as_ref().to_owned(),
         })
+    }
+
+    pub async fn create_wal_dir(shard_id: u64) -> Result<()> {
+        let wal_manager_dir = Self::generage_path(shard_id);
+        create_dir_all(wal_manager_dir).await.unwrap();
+
+        Ok(())
+    }
+
+    pub async fn load_wal_by_shard_id(shard_id: u64) -> Result<Wal> {
+        let wal_manager_dir = Self::generage_path(shard_id);
+        return Wal::load(wal_manager_dir).await;
     }
 
     fn generate_new_wal_file_path(&self) -> PathBuf {
@@ -241,7 +241,12 @@ impl WalTrait for Wal {
     async fn append(&mut self, ents: Vec<Entry>) -> Result<()> {
         self.discard(ents.first().unwrap().index).await?;
 
-        for ent in ents.iter() {
+        let mut iter = ents.into_iter().peekable();
+        loop {
+            let Some(ent)= iter.peek() else {
+                break;
+            };
+
             if self.wal_files.is_empty() || self.wal_files.last().unwrap().is_sealed() {
                 let path = self.generate_new_wal_file_path();
                 let new_wal_file = wal_file::WalFile::create_new_wal_file(path).await.unwrap();
@@ -251,22 +256,20 @@ impl WalTrait for Wal {
 
             debug!("append wal entry, index: {}", ent.index);
 
-            match self
+            if let Err(e) = self
                 .wal_files
                 .last_mut()
                 .unwrap()
                 .append_entry(ent.clone())
                 .await
             {
-                Err(WalError::WalFileFull) => {
+                if let Some(WalError::WalFileFull) = e.downcast_ref() {
                     self.wal_files.last_mut().unwrap().seal().await.unwrap();
                     continue;
                 }
-                Err(e) => {
-                    bail!(e);
-                }
-                Ok(_) => {}
+                return Err(e);
             }
+            iter.next();
         }
 
         Ok(())

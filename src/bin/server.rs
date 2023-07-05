@@ -16,7 +16,7 @@ use dataserver::handler::RealDataServer;
 
 fn create_lock_file(path: impl AsRef<Path>) -> Result<()> {
     let lock_path = path.as_ref().to_path_buf().join("LOCK");
-    debug!("lock_path: {:?}", lock_path);
+    info!("create lock file: {:?}", lock_path);
 
     std::fs::OpenOptions::new()
         .create_new(true)
@@ -89,7 +89,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let work_dir = CONFIG.read().work_directory.as_ref().unwrap().to_owned();
     set_current_dir(&work_dir)?;
-    info!("change working directory to {}", &work_dir);
+    info!("change working directory to {}/", &work_dir);
 
     if let Err(e) = create_lock_file(&work_dir) {
         error!("failed to create lock file, err: {}", e);

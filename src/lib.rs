@@ -59,5 +59,5 @@ pub async fn start_background_tasks() {
     heartbeat::HEART_BEATER.write().start().await;
     sync_shard::SHARD_SYNCER.write().start().await;
 
-    info!("background tasks start finish ...");
+    info!("background tasks start finished");
 }

@@ -74,7 +74,7 @@ pub struct MsClient {}
 
 impl MsClient {
     pub fn new() -> Self {
-        Self{}
+        Self {}
     }
 
     fn get_ms_addr(&self) -> String {
@@ -86,7 +86,7 @@ impl MsClient {
     pub async fn heartbeat(&self, restarting: bool) -> Result<()> {
         let addr = self.get_ms_addr();
 
-        info!("heartbeat to metaserver ... metaserver addr: {}", addr);
+        info!("heartbeat to metaserver ... metaserver_addr: {}", addr);
         let mut client = meta_service_client::MetaServiceClient::connect(addr.clone()).await?;
 
         let req = tonic::Request::new(HeartBeatRequest {
@@ -109,6 +109,7 @@ impl MsClient {
     pub async fn sync_shards_to_ms(&self, shards: ShardMetaIter) -> Result<()> {
         let addr = self.get_ms_addr();
 
+        info!("sync shards to metaserver");
         let mut client = meta_service_client::MetaServiceClient::connect(addr.clone()).await?;
 
         let req = tonic::Request::new(stream::iter(SyncShardIter::new(shards.into_iter())));

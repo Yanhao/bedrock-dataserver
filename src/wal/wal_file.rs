@@ -253,10 +253,10 @@ impl WalFile {
         }
     }
 
-    pub async fn append_entry(&mut self, ent: Entry) -> std::result::Result<(), WalError> {
+    pub async fn append_entry(&mut self, ent: Entry) -> Result<()> {
         if self.entry_len() >= MAX_META_COUNT {
             info!("wal file is full, length: {}", self.entry_len());
-            return Err(WalError::WalFileFull);
+            bail!(WalError::WalFileFull);
         }
 
         let meta = WalEntryMeta {
@@ -296,11 +296,11 @@ impl WalFile {
 
         self.next_entry_offset += entry_buf.len() as u64;
         if let Err(e) = self.file.seek(SeekFrom::Start(meta.entry_offset)).await {
-            return Err(WalError::FailedToSeek);
+            bail!(WalError::FailedToSeek);
         }
 
         if let Err(_) = self.file.write(&entry_buf).await {
-            return Err(WalError::FailedToWrite);
+            bail!(WalError::FailedToWrite);
         }
         self.wal_entry_index.push(meta);
         self.end_version = ent.index;
