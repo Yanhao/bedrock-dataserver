@@ -59,7 +59,7 @@ pub struct WalFooter {
 
 pub struct WalFile {
     pub header: Box<WalHeader>,
-    pub wal_entry_index: Vec<WalEntryMeta>,
+    pub wal_entry_metas: Vec<WalEntryMeta>,
     pub footer: Option<Box<WalFooter>>,
 
     pub file: File,
@@ -150,7 +150,7 @@ impl WalFile {
             next_index: footer.end_index + 1,
 
             footer: Some(Box::new(footer)),
-            wal_entry_index: metas,
+            wal_entry_metas: metas,
         })
     }
 
@@ -217,7 +217,7 @@ impl WalFile {
             start_index: metas.first().unwrap().index,
             next_index: metas.last().unwrap().index + 1,
 
-            wal_entry_index: metas,
+            wal_entry_metas: metas,
         })
     }
 
@@ -301,7 +301,7 @@ impl WalFile {
             error!("file write failed, err: {e}");
             bail!(WalError::FailedToWrite);
         }
-        self.wal_entry_index.push(meta);
+        self.wal_entry_metas.push(meta);
         self.next_index += 1;
         info!("wal file next_version 2: {}", self.next_index);
 
@@ -357,7 +357,7 @@ impl WalFile {
             footer: None,
             file,
             path: path.as_ref().into(),
-            wal_entry_index: vec![],
+            wal_entry_metas: vec![],
             next_entry_offset: 4096,
             sealed: false,
             start_index: start_version,
@@ -366,11 +366,11 @@ impl WalFile {
     }
 
     pub async fn seal(&mut self) -> Result<()> {
-        let l = self.wal_entry_index.len();
+        let l = self.wal_entry_metas.len();
 
         let metas_data = unsafe {
             slice::from_raw_parts(
-                self.wal_entry_index.as_slice() as *const _ as *const u8,
+                self.wal_entry_metas.as_slice() as *const _ as *const u8,
                 std::mem::size_of::<WalEntryMeta>() * l,
             )
         };
@@ -391,10 +391,10 @@ impl WalFile {
 
         let footer = WalFooter {
             entry_index_offset,
-            entry_count: self.wal_entry_index.len() as u32,
+            entry_count: self.wal_entry_metas.len() as u32,
 
-            start_index: self.wal_entry_index[0].index,
-            end_index: self.wal_entry_index[l - 1].index,
+            start_index: self.wal_entry_metas[0].index,
+            end_index: self.wal_entry_metas[l - 1].index,
 
             padding_: [0; 4068],
         };
@@ -443,7 +443,7 @@ impl WalFile {
     }
 
     pub fn entry_len(&self) -> u64 {
-        self.wal_entry_index.len() as u64
+        self.wal_entry_metas.len() as u64
     }
 
     pub async fn entries(
@@ -459,7 +459,7 @@ impl WalFile {
         let end_index = start_index + (end_version - start_version);
 
         info!("start_index: {start_index}, end_index: {end_index}");
-        let target_meta = &(self.wal_entry_index)[start_index as usize..={ end_index as usize }];
+        let target_meta = &(self.wal_entry_metas)[start_index as usize..={ end_index as usize }];
 
         let mut ret = vec![];
         for m in target_meta.iter() {
@@ -493,7 +493,7 @@ impl WalFile {
             4096
         } else {
             let index = next_version - self.first_version() - 1;
-            self.wal_entry_index[index as usize].entry_offset
+            self.wal_entry_metas[index as usize].entry_offset
         };
 
         self.next_entry_offset = entry_offset;
