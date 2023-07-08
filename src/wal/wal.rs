@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-use anyhow::{bail, Result};
+use anyhow::{bail, ensure, Result};
 use async_trait::async_trait;
 use tokio::fs::{self, create_dir_all, remove_dir_all};
 use tracing::{debug, error, info};
@@ -39,24 +39,18 @@ impl Wal {
     }
 
     async fn load(dir: impl AsRef<Path>, shard_id: u64) -> Result<Wal> {
-        if !dir.as_ref().exists() {
-            error!("file not exists: path: {}", dir.as_ref().display());
-            bail!(WalError::FileNotExists);
-        }
-
-        if !dir.as_ref().is_dir() {
-            bail!(WalError::WrongFilePath);
-        }
+        ensure!(dir.as_ref().exists(), "path not exists");
+        ensure!(dir.as_ref().is_dir(), "path is not directory");
 
         info!("start load wal at: {:?} ...", dir.as_ref());
-        let mut wal_file_path = vec![];
-        for entry in dir.as_ref().read_dir().unwrap() {
-            if let Ok(entry) = entry {
-                info!("found wal file: {:?}", entry.path());
-                wal_file_path.push(entry.path());
-            }
-        }
-        if wal_file_path.is_empty() {
+
+        let mut wal_file_paths = dir
+            .as_ref()
+            .read_dir()?
+            .map(|ent| ent.map(|ent| ent.path()))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        if wal_file_paths.is_empty() {
             return Ok(Wal {
                 shard_id,
                 wal_files: vec![],
@@ -64,30 +58,20 @@ impl Wal {
             });
         }
 
-        wal_file_path.sort_by(|a: &PathBuf, b: &PathBuf| {
+        wal_file_paths.sort_by(|a: &PathBuf, b: &PathBuf| {
             let a_suffix = Self::wal_file_suffix(a.as_path());
             let b_suffix = Self::wal_file_suffix(b.as_path());
             u64::cmp(&a_suffix, &b_suffix)
         });
 
-        debug!("wal_file_path length: {}", wal_file_path.len());
+        debug!("wal_file_path length: {}", wal_file_paths.len());
 
         let mut wal_files = vec![];
-
-        let mut i = 0;
-        let last_i = wal_file_path.len() - 1;
-        for p in wal_file_path.iter() {
-            info!("load wal file: {:?}", p.as_path());
-
-            assert!(i <= last_i, "invalid vector index");
-            let wal_file = wal_file::WalFile::load_wal_file(p.as_path(), i == last_i && i != 0)
-                .await
-                .unwrap();
-
-            debug!("wal next index: {}", wal_file.next_version());
-
-            wal_files.push(wal_file);
-            i += 1;
+        for (i, p) in wal_file_paths.iter().enumerate() {
+            wal_files.push(
+                wal_file::WalFile::load_wal_file(p.as_path(), i != wal_file_paths.len() - 1)
+                    .await?,
+            );
         }
 
         Ok(Wal {
