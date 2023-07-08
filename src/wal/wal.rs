@@ -274,21 +274,20 @@ impl WalTrait for Wal {
     }
 
     async fn compact(&mut self, compact_index: u64) -> Result<()> {
-        info!("compact log to {compact_index}");
-
         let next_index = self.next_index();
+        info!("compact log to {compact_index}, next_index: {next_index}");
         if next_index == compact_index {
             return Ok(());
         }
 
         if next_index < compact_index {
-            self.wal_files = vec![];
+            self.wal_files.clear();
             remove_files_in_dir(self.dir.clone()).await?;
 
             let path = self.generate_new_wal_file_path();
             let new_wal_file = wal_file::WalFile::create_new_wal_file(path, compact_index)
                 .await
-                .unwrap();
+                .inspect_err(|e| error!("create new wal file failed, err: {e}"))?;
 
             self.wal_files.push(new_wal_file);
 

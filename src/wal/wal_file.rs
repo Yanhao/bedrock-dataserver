@@ -45,6 +45,7 @@ pub struct WalHeader {
     pub padding_: [u8; 4096 - 17],
 } // 4k fixed
 
+#[derive(Debug)]
 #[repr(C, packed)]
 pub struct WalFooter {
     pub entry_index_offset: u64,
@@ -93,28 +94,21 @@ impl WalFile {
         info!("load_sealed_wal_file at {:?}", path.as_ref());
         let header = Self::load_wal_file_header(&mut file).await?;
 
-        let mut footer: WalFooter = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
+        let mut footer: WalFooter = unsafe { std::mem::zeroed() };
         let data = unsafe {
             slice::from_raw_parts_mut(
                 &mut footer as *mut _ as *mut u8,
                 std::mem::size_of::<WalFooter>(),
             )
         };
+        info!("footer length: {}", data.len());
 
-        let footer_offset = file.metadata().await.unwrap().len() - 4096;
+        let footer_offset = file.metadata().await?.len() - 4096;
 
-        file.seek(SeekFrom::Start(footer_offset))
-            .await
-            .map_err(|_| anyhow!(WalError::FailedToSeek))?;
+        file.seek(SeekFrom::Start(footer_offset)).await?;
+        file.read(data).await?;
 
-        if let Err(e) = file.read(data).await {
-            error!(
-                "failed to read wal header, wal file: {:?}, err: {:?}",
-                path.as_ref(),
-                e
-            );
-            bail!(WalError::FailedToRead);
-        }
+        info!("footer: {:?}", footer);
 
         let mut metas = {
             let meta = WalEntryMeta {
@@ -127,7 +121,7 @@ impl WalFile {
 
         let metas_data = unsafe {
             slice::from_raw_parts_mut(
-                &mut metas as *mut _ as *mut u8,
+                metas.as_mut_ptr() as *mut u8,
                 metas.len() * std::mem::size_of::<WalEntryMeta>(),
             )
         };

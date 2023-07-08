@@ -265,17 +265,13 @@ impl Shard {
 
         Ok(())
     }
-}
 
-impl Shard {
     pub async fn get_next_index(&self) -> u64 {
         self.replog.read().await.next_index()
     }
 
-    pub async fn reset_replog(&self, last_index: u64) -> Result<()> {
-        // self.next_index.store(last_index, Ordering::Relaxed);
-
-        self.replog.write().await.compact(last_index).await
+    pub async fn reset_replog(&self, next_index: u64) -> Result<()> {
+        self.replog.write().await.compact(next_index).await
     }
 }
 
