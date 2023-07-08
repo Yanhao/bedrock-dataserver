@@ -7,7 +7,7 @@ use sled;
 use tokio::fs::remove_dir_all;
 use tracing::{debug, error, info};
 
-use crate::config::CONFIG;
+use crate::{config::CONFIG, shard::Shard};
 
 use super::KvStoreError;
 
@@ -21,16 +21,11 @@ pub struct KeyValue {
 }
 
 impl SledStore {
-    fn store_path(shard_id: u64) -> PathBuf {
+    fn db_path(shard_id: u64) -> PathBuf {
         let data_dir: PathBuf = CONFIG.read().data_directory.as_ref().unwrap().into();
 
-        info!("shard_id: 0x{:016x}", shard_id);
-        let storage_id: u32 = ((shard_id & 0xFFFFFFFF_00000000) >> 32) as u32;
-        let shard_isn: u32 = (shard_id & 0x00000000_FFFFFFFF) as u32;
-        info!(
-            "storage_id: 0x{:08x}, shard_isn: 0x{:08x}",
-            storage_id, shard_isn
-        );
+        let storage_id = Shard::shard_sid(shard_id);
+        let shard_isn = Shard::shard_isn(shard_id);
         data_dir
             .join::<String>("data".into())
             .join::<String>(format!("{:08x}", storage_id))
@@ -38,22 +33,26 @@ impl SledStore {
     }
 
     pub async fn load(shard_id: u64) -> Result<Self> {
-        let path = Self::store_path(shard_id);
+        info!("load shard sledkv db 0x{:016x}", shard_id);
+
+        let path = Self::db_path(shard_id);
         let store = sled::open(path).unwrap();
         Ok(Self { db: store })
     }
 
     pub async fn create(shard_id: u64) -> Result<Self> {
-        let path = Self::store_path(shard_id);
+        info!("create shard sledkv db 0x{:016x}", shard_id);
+
+        let path = Self::db_path(shard_id);
         let store = sled::open(path).unwrap();
         Ok(Self { db: store })
     }
 
     pub async fn remove(shard_id: u64) -> Result<()> {
-        let path = Self::store_path(shard_id);
-        debug!("remove directory: {}", path.display());
+        let path = Self::db_path(shard_id);
+        debug!("remove directory: {:?}", path);
 
-        remove_dir_all(path).await;
+        remove_dir_all(path).await?;
 
         Ok(())
     }
@@ -61,6 +60,7 @@ impl SledStore {
     pub async fn kv_get(&self, key: &[u8]) -> Result<Vec<u8>> {
         let iv = match self.db.get(key) {
             Err(e) => {
+                error!("sledkv get failed, err: {e}");
                 bail!(KvStoreError::DbInternalError);
             }
             Ok(v) => v,
@@ -73,7 +73,8 @@ impl SledStore {
     }
 
     pub async fn kv_set(&self, key: &[u8], value: &[u8]) -> Result<()> {
-        self.db.insert(key, value);
+        self.db.insert(key, value)?;
+
         Ok(())
     }
 
@@ -106,13 +107,14 @@ impl SledStore {
     }
 
     pub async fn kv_delete_range(&self, start_key: &[u8], end_key: &[u8]) -> Result<()> {
+        // FIXME:
         let start_key: Vec<u8> = start_key.into();
 
         loop {
             let (key, _) = self.db.pop_max().unwrap().unwrap();
             let key: Vec<u8> = key.as_ref().to_owned();
             if key < start_key {
-                self.db.remove(key);
+                self.db.remove(key)?;
                 break;
             }
         }
@@ -165,21 +167,6 @@ impl SledStore {
         &self,
         entries: Vec<shard_install_snapshot_request::Entry>,
     ) -> Result<()> {
-        // info!("piece: {}", String::from_utf8_lossy(piece));
-
-        // let piece = piece.to_owned();
-        // let mut ps = piece.split(|b| *b == '\n' as u8);
-        // info!("split : {ps:?}");
-
-        // let key = ps.next().unwrap().to_owned();
-        // let value = ps.next().unwrap().to_owned();
-        // assert!(ps.next().is_none());
-        // info!(
-        //     "kv piece: key: {}, value: {}",
-        //     String::from_utf8_lossy(&key),
-        //     String::from_utf8_lossy(&value)
-        // );
-
         for ent in entries.iter() {
             info!(
                 "install_snapshot, key: {:?}, value: {:?}",

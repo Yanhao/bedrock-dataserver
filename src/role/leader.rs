@@ -25,7 +25,7 @@ impl Leader {
 
         tokio::spawn(async move {
             let shard_id = shard.get_shard_id();
-            info!("start append entry task for shard: {}", shard_id);
+            info!("start append entry task for shard: 0x{:016x}", shard_id);
 
             'outer: loop {
                 tokio::select! {

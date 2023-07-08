@@ -157,7 +157,7 @@ impl DataService for RealDataServer {
 
         let _shard = self.get_shard(shard_id).await?;
 
-        info!("create shard successfully, shard_id: {}", shard_id);
+        info!("create shard successfully, shard_id: 0x{:016x}", shard_id);
 
         Ok(Response::new(resp))
     }

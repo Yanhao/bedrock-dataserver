@@ -75,7 +75,7 @@ pub struct Shard {
 impl Shard {
     fn new(kv_store: SledStore, meta: ShardMeta, wal: Wal) -> Self {
         let next_index = wal.next_index();
-        info!("next_index: {next_index}");
+        info!("shard 0x{:016x}, next_index: {next_index}", meta.shard_id);
 
         return Shard {
             shard_meta: Arc::new(parking_lot::RwLock::new(meta)),
@@ -179,6 +179,14 @@ impl Shard {
         Wal::remove_wal(shard_id).await?;
 
         Ok(())
+    }
+
+    pub fn shard_isn(shard_id: u64) -> u32 {
+        (shard_id & 0x00000000_FFFFFFFF) as u32
+    }
+
+    pub fn shard_sid(shard_id: u64) -> u32 {
+        ((shard_id & 0xFFFFFFFF_00000000) >> 32) as u32
     }
 }
 

@@ -10,6 +10,7 @@ use idl_gen::replog_pb::Entry;
 
 use super::{wal_file, WalError, WalTrait};
 use crate::config::CONFIG;
+use crate::shard::Shard;
 
 const MAX_ENTRY_COUNT: u64 = 10;
 
@@ -27,16 +28,11 @@ impl Wal {
         suffix
     }
 
-    fn generage_path(shard_id: u64) -> PathBuf {
+    fn wal_dir_path(shard_id: u64) -> PathBuf {
         let wal_dir: PathBuf = CONFIG.read().wal_directory.as_ref().unwrap().into();
 
-        let storage_id: u32 = ((shard_id & 0xFFFFFFFF_00000000) >> 32) as u32;
-        let shard_isn: u32 = (shard_id & 0x00000000_FFFFFFFF) as u32;
-        info!(
-            "shard_id: 0x{:016x}, {}; storage_id: 0x{:08x}, shard_isn: 0x{:08x}",
-            shard_id, shard_id, storage_id, shard_isn
-        );
-
+        let storage_id = Shard::shard_sid(shard_id);
+        let shard_isn = Shard::shard_isn(shard_id);
         wal_dir
             .join::<String>(format!("{:08x}", storage_id))
             .join::<String>(format!("{:08x}", shard_isn))
@@ -52,11 +48,11 @@ impl Wal {
             bail!(WalError::WrongFilePath);
         }
 
-        info!("start load wal at: {} ...", dir.as_ref().display());
+        info!("start load wal at: {:?} ...", dir.as_ref());
         let mut wal_file_path = vec![];
         for entry in dir.as_ref().read_dir().unwrap() {
             if let Ok(entry) = entry {
-                info!("load wal file: {}", entry.path().display());
+                info!("found wal file: {:?}", entry.path());
                 wal_file_path.push(entry.path());
             }
         }
@@ -81,7 +77,7 @@ impl Wal {
         let mut i = 0;
         let last_i = wal_file_path.len() - 1;
         for p in wal_file_path.iter() {
-            info!("load wal, path: {}", p.as_path().display());
+            info!("load wal file: {:?}", p.as_path());
 
             assert!(i <= last_i, "invalid vector index");
             let wal_file = wal_file::WalFile::load_wal_file(p.as_path(), i == last_i && i != 0)
@@ -102,14 +98,15 @@ impl Wal {
     }
 
     pub async fn create_wal_dir(shard_id: u64) -> Result<()> {
-        let wal_manager_dir = Self::generage_path(shard_id);
+        info!("create wal directory for 0x{:016x}", shard_id);
+        let wal_manager_dir = Self::wal_dir_path(shard_id);
         create_dir_all(wal_manager_dir).await.unwrap();
 
         Ok(())
     }
 
     pub async fn load_wal_by_shard_id(shard_id: u64) -> Result<Wal> {
-        let wal_manager_dir = Self::generage_path(shard_id);
+        let wal_manager_dir = Self::wal_dir_path(shard_id);
         return Wal::load(wal_manager_dir, shard_id).await;
     }
 
@@ -123,7 +120,7 @@ impl Wal {
     }
 
     pub async fn remove_wal(shard_id: u64) -> Result<()> {
-        remove_dir_all(Self::generage_path(shard_id)).await.unwrap();
+        remove_dir_all(Self::wal_dir_path(shard_id)).await.unwrap();
         Ok(())
     }
 
