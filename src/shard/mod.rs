@@ -1,11 +1,11 @@
 use thiserror::Error;
 
-mod order_keeper;
 mod shard;
 mod shard_manager;
 
 pub use shard::{EntryWithNotifierSender, Shard};
 pub use shard_manager::{ShardManager, SHARD_MANAGER};
+
 pub const KV_RANGE_LIMIT: i32 = 256;
 
 #[derive(Error, Debug)]

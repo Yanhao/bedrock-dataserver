@@ -25,7 +25,7 @@ use crate::config::get_self_socket_addr;
 use crate::ds_client::CONNECTIONS;
 use crate::kv_store::{self, SledStore};
 use crate::role::{Follower, Leader, Role};
-use crate::shard::{order_keeper::OrderKeeper, ShardError};
+use crate::shard::ShardError;
 use crate::wal::{Wal, WalTrait};
 
 const INPUT_CHANNEL_LEN: usize = 10240;
@@ -64,7 +64,6 @@ pub struct Shard {
     pub kv_store: kv_store::SledStore,
     pub replog: Arc<RwLock<Wal>>,
 
-    order_keeper: RwLock<OrderKeeper>,
     write_lock: Mutex<()>,
 
     deleting: AtomicBool,
@@ -78,9 +77,6 @@ impl Shard {
         let next_index = wal.next_index();
         info!("next_index: {next_index}");
 
-        let mut order_keeper = OrderKeeper::new();
-        order_keeper.set_next_order(next_index);
-
         return Shard {
             shard_meta: Arc::new(parking_lot::RwLock::new(meta)),
             kv_store,
@@ -88,7 +84,6 @@ impl Shard {
             deleting: false.into(),
             installing_snapshot: false.into(),
             input: None.into(),
-            order_keeper: RwLock::new(order_keeper),
             write_lock: Mutex::new(()),
 
             role: RwLock::new(Role::NotReady),
@@ -328,13 +323,6 @@ impl Shard {
             ..Default::default()
         };
 
-        // info!("ensure order, index: {}", entry.index);
-        // self.order_keeper
-        //     .write()
-        //     .await
-        //     .ensure_order(entry.index)
-        //     .await?;
-
         let lg = self.write_lock.lock().await;
         // TODO: use group commit to improve performance
         let index = self
@@ -357,13 +345,6 @@ impl Shard {
         }
         drop(lg);
 
-        // self.order_keeper
-        //     .write()
-        //     .await
-        //     .pass_order(entry.index)
-        //     .await;
-        // info!("pass order, index: {}", entry.index);
-
         Ok(EntryWithNotifierReceiver {
             entry,
             receiver: rx,
@@ -371,12 +352,6 @@ impl Shard {
     }
 
     pub async fn append_log_entry(&self, entry: &Entry) -> Result<()> {
-        // self.order_keeper
-        //     .write()
-        //     .await
-        //     .ensure_order(entry.index)
-        //     .await?;
-
         let next_index = self.replog.read().await.next_index();
         info!("last_index: {next_index}, entry index: {}", entry.index);
         if next_index != entry.index {
@@ -390,12 +365,6 @@ impl Shard {
             .append(vec![entry.clone()], true)
             .await
             .unwrap();
-
-        // self.order_keeper
-        //     .write()
-        //     .await
-        //     .pass_order(entry.index)
-        //     .await;
 
         Ok(())
     }
@@ -513,18 +482,6 @@ impl Shard {
         let mut req_stream = vec![];
         for kv in snap.into_iter() {
             let (key, value) = (kv.0.to_owned(), kv.1.to_owned());
-
-            // let mut item = vec![];
-            // item.append(&mut key);
-            // item.append(&mut vec!['\n' as u8]);
-            // item.append(&mut value);
-
-            // info!(
-            //     "kv data_piece: key: {}, value: {}",
-            //     String::from_utf8_lossy(&key),
-            //     String::from_utf8_lossy(&value)
-            // );
-            // info!("data_piece: {}", String::from_utf8_lossy(&item));
 
             info!("install_snapshot_to, key: {:?}, value: {:?}", key, value);
 
