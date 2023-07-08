@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::slice;
 
 use anyhow::{anyhow, bail, Result};
+use derivative::Derivative;
 use prost::Message;
 use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
@@ -23,6 +24,8 @@ pub struct WalEntryMeta {
     pub index: u64,
 } // 16 byte fixed
 
+#[derive(Derivative)]
+#[derivative(Debug)]
 #[repr(C, packed)]
 pub struct WalEntryHeader {
     pub offset: u64,
@@ -31,21 +34,26 @@ pub struct WalEntryHeader {
 
     pub entry_length: u64,
 
+    #[derivative(Debug = "ignore")]
     pub padding_: [u8; 128 - 48],
 
     pub checksum: u64,
 } // 128 byte fixed
 
+#[derive(Derivative)]
+#[derivative(Debug)]
 #[repr(C, packed)]
 pub struct WalHeader {
     pub magic: u64,
     pub format: u8,
     pub first_entry_offset: u64, // always 4096
 
+    #[derivative(Debug = "ignore")]
     pub padding_: [u8; 4096 - 17],
 } // 4k fixed
 
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Debug)]
 #[repr(C, packed)]
 pub struct WalFooter {
     pub entry_index_offset: u64,
@@ -54,6 +62,7 @@ pub struct WalFooter {
     pub start_index: u64,
     pub end_index: u64,
 
+    #[derivative(Debug = "ignore")]
     pub padding_: [u8; 4096 - 28],
 } // 4k fixed
 
