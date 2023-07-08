@@ -390,7 +390,10 @@ impl Shard {
         en: Entry,
     ) -> std::result::Result<(), ShardError> {
         let shard_id = self.get_shard_id();
-        let mut client = CONNECTIONS.get_client(addr).await.unwrap();
+        let mut client = CONNECTIONS
+            .get_client(addr)
+            .await
+            .map_err(|_| ShardError::FailedToAppendLog)?;
 
         let request = Request::new(ShardAppendLogRequest {
             shard_id,
@@ -403,13 +406,11 @@ impl Shard {
             }],
         });
 
-        let resp = match client.shard_append_log(request).await {
-            Err(e) => {
-                warn!("failed to  append_log, err {}", e);
-                return Err(ShardError::FailedToAppendLog);
-            }
-            Ok(v) => v,
-        };
+        let resp = client
+            .shard_append_log(request)
+            .await
+            .inspect_err(|e| warn!("failed to  append_log, err {}", e))
+            .map_err(|_| ShardError::FailedToAppendLog)?;
 
         if resp.get_ref().is_old_leader {
             warn!("failed to append log, not leader");
@@ -432,13 +433,9 @@ impl Shard {
                 .await;
 
             if let Err(_) = entries_res {
-                next_index =
-                    match Self::install_snapshot_to(self.clone(), client.clone(), &addr).await {
-                        Err(_) => {
-                            return Err(ShardError::FailedToAppendLog);
-                        }
-                        Ok(v) => v,
-                    };
+                next_index = Self::install_snapshot_to(self.clone(), client.clone(), &addr)
+                    .await
+                    .map_err(|_| ShardError::FailedToAppendLog)?;
 
                 continue;
             }
@@ -451,22 +448,24 @@ impl Shard {
                 leader_change_ts: Some(self.get_leader_change_ts().into()),
                 entries: ents
                     .iter()
-                    .map(|ent| shard_append_log_request::Entry {
-                        op: ent.op.clone(),
-                        index: ent.index,
-                        key: ent.key.clone(),
-                        value: ent.value.clone(),
+                    .map(|ent| {
+                        info!("append_log_to ent index: {}", ent.index);
+
+                        shard_append_log_request::Entry {
+                            op: ent.op.clone(),
+                            index: ent.index,
+                            key: ent.key.clone(),
+                            value: ent.value.clone(),
+                        }
                     })
                     .collect(),
             });
 
-            let resp = match client.shard_append_log(request).await {
-                Err(e) => {
-                    warn!("failed to append_log, err: {}", e);
-                    return Err(ShardError::FailedToAppendLog);
-                }
-                Ok(v) => v,
-            };
+            let resp = client
+                .shard_append_log(request)
+                .await
+                .inspect_err(|e| warn!("failed to append_log, err: {}", e))
+                .map_err(|_| ShardError::FailedToAppendLog)?;
 
             if resp.get_ref().is_old_leader {
                 return Err(ShardError::NotLeader);

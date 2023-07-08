@@ -259,11 +259,12 @@ impl WalFile {
         }
     }
 
-    pub async fn append_entry(&mut self, ent: Entry) -> Result<()> {
+    pub async fn append_entry(&mut self, mut ent: Entry) -> Result<()> {
         if self.entry_len() >= MAX_META_COUNT {
             info!("wal file is full, length: {}", self.entry_len());
             bail!(WalError::WalFileFull);
         }
+        ent.index = self.next_index;
 
         info!("wal file next_version before: {}", self.next_index);
         let meta = WalEntryMeta {
