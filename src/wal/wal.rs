@@ -293,11 +293,14 @@ impl WalTrait for Wal {
     }
 
     async fn compact(&mut self, compact_index: u64) -> Result<()> {
-        if self.next_index() == compact_index {
+        info!("compact log to {compact_index}");
+
+        let next_index = self.next_index();
+        if next_index == compact_index {
             return Ok(());
         }
 
-        if self.next_index() < compact_index {
+        if next_index < compact_index {
             self.wal_files = vec![];
             remove_files_in_dir(self.dir.clone()).await?;
 
@@ -311,23 +314,23 @@ impl WalTrait for Wal {
             return Ok(());
         }
 
-        info!("compact log to {compact_index}");
-        return Ok(());
+        if next_index > compact_index {
+            if self.first_index() >= compact_index {
+                return Ok(());
+            }
 
-        if self.wal_files.first().unwrap().first_version() >= compact_index {
+            while self.wal_files.len() > 1 {
+                if self.wal_files.first().unwrap().next_version() <= compact_index {
+                    let path = self.wal_files.first().unwrap().path.clone();
+                    self.wal_files.remove(0);
+
+                    tokio::fs::remove_file(&path).await.unwrap();
+                    info!("remove wal file {:?}", &path);
+                }
+            }
+
             return Ok(());
         }
-
-        // while !self.wal_files.is_empty() {
-        //     if self.wal_files.first().unwrap().last_version() < compact_index {
-        //         let path = self.wal_files.first().unwrap().path.clone();
-
-        //         self.wal_files.drain(0..0); // FIXME: another way?
-
-        //         info!("remove wal file: {}", path.display());
-        //         std::fs::remove_file(path);
-        //     }
-        // }
 
         Ok(())
     }
