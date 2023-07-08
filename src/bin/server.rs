@@ -1,3 +1,7 @@
+#![feature(result_option_inspect)]
+#![feature(impl_trait_in_assoc_type)]
+#![feature(async_closure)]
+
 use std::env::set_current_dir;
 use std::path::Path;
 
