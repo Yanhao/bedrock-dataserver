@@ -55,7 +55,7 @@ impl ShardManager {
 
         let replicates = shard.get_replicates();
         let leader = shard.get_leader();
-        let last_wal_index = shard.get_last_index().await;
+        let last_wal_index = shard.get_next_index().await;
 
         let start_key = shard.middle_key();
         let end_key = shard.max_key();

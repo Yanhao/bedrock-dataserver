@@ -5,20 +5,20 @@ use std::sync::Arc;
 use std::time;
 use std::vec::Vec;
 
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 use arc_swap::ArcSwapOption;
 use futures_util::stream;
 use num_bigint::{BigUint, ToBigUint};
 use parking_lot;
 use prost::Message;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{mpsc, Mutex, RwLock};
 use tonic::Request;
 use tracing::{info, warn};
 
 use idl_gen::replog_pb::Entry;
 use idl_gen::service_pb::{
-    data_service_client, shard_append_log_request, CreateShardRequest, ShardAppendLogRequest,
-    ShardInstallSnapshotRequest, ShardMeta,
+    data_service_client, shard_append_log_request, shard_install_snapshot_request,
+    CreateShardRequest, ShardAppendLogRequest, ShardInstallSnapshotRequest, ShardMeta,
 };
 
 use crate::config::get_self_socket_addr;
@@ -43,8 +43,16 @@ pub struct EntryWithNotifierReceiver {
 }
 
 impl EntryWithNotifierReceiver {
-    pub async fn wait_result(&mut self) -> Result<(), ShardError> {
-        self.receiver.recv().await.unwrap()
+    pub async fn wait_result(&mut self) -> Result<()> {
+        let res = self
+            .receiver
+            .recv()
+            .await
+            .ok_or(anyhow!("wait result failed"))?;
+
+        let _a = res?;
+
+        Ok(())
     }
 }
 
@@ -56,8 +64,8 @@ pub struct Shard {
     pub kv_store: kv_store::SledStore,
     pub replog: Arc<RwLock<Wal>>,
 
-    next_index: AtomicU64,
     order_keeper: RwLock<OrderKeeper>,
+    write_lock: Mutex<()>,
 
     deleting: AtomicBool,
     installing_snapshot: AtomicBool,
@@ -67,7 +75,7 @@ pub struct Shard {
 
 impl Shard {
     fn new(kv_store: kv_store::SledStore, meta: ShardMeta, wal: Wal) -> Self {
-        let next_index = wal.last_index() + 1;
+        let next_index = wal.next_index();
         info!("next_index: {next_index}");
 
         let mut order_keeper = OrderKeeper::new();
@@ -79,9 +87,9 @@ impl Shard {
             replog: Arc::new(RwLock::new(wal)),
             deleting: false.into(),
             installing_snapshot: false.into(),
-            next_index: next_index.into(),
             input: None.into(),
             order_keeper: RwLock::new(order_keeper),
+            write_lock: Mutex::new(()),
 
             role: RwLock::new(Role::NotReady),
         };
@@ -100,7 +108,7 @@ impl Shard {
             replicates_update_ts: req.get_ref().replica_update_ts.to_owned().unwrap().into(),
 
             replicates: req.get_ref().replicates.clone(),
-            last_wal_index: 0,
+            next_index: 0,
 
             min_key: req.get_ref().min_key.clone(),
             max_key: req.get_ref().max_key.clone(),
@@ -126,7 +134,7 @@ impl Shard {
         shard_id: u64,
         leader: String,
         replicates: Vec<SocketAddr>,
-        last_wal_index: u64,
+        next_index: u64,
         key_range: Range<Vec<u8>>,
     ) -> Result<Self> {
         let sled_db = kv_store::SledStore::create(shard_id).await.unwrap();
@@ -141,7 +149,7 @@ impl Shard {
             leader,
             replicates: replicates.into_iter().map(|r| r.to_string()).collect(),
 
-            last_wal_index,
+            next_index,
 
             min_key: key_range.start,
             max_key: key_range.end,
@@ -257,16 +265,12 @@ impl Shard {
 }
 
 impl Shard {
-    pub async fn get_last_index(&self) -> u64 {
-        self.replog.read().await.last_index()
-    }
-
-    pub fn get_next_index(&self) -> u64 {
-        self.next_index.load(Ordering::Relaxed)
+    pub async fn get_next_index(&self) -> u64 {
+        self.replog.read().await.next_index()
     }
 
     pub async fn reset_replog(&self, last_index: u64) -> Result<()> {
-        self.next_index.store(last_index, Ordering::Relaxed);
+        // self.next_index.store(last_index, Ordering::Relaxed);
 
         self.replog.write().await.compact(last_index).await
     }
@@ -314,34 +318,36 @@ impl Shard {
     pub async fn process_write(
         &self,
         op: &str,
-        key: Vec<u8>,
-        value: Vec<u8>,
+        key: &[u8],
+        value: &[u8],
     ) -> Result<EntryWithNotifierReceiver> {
         let mut entry = Entry {
             op: op.into(),
-            key,
-            value,
+            key: key.to_owned(),
+            value: value.to_owned(),
             ..Default::default()
         };
-        entry.index = self.next_index.fetch_add(1, Ordering::Relaxed);
 
-        let (tx, rx) = mpsc::channel(3);
+        // info!("ensure order, index: {}", entry.index);
+        // self.order_keeper
+        //     .write()
+        //     .await
+        //     .ensure_order(entry.index)
+        //     .await?;
 
-        info!("ensure order, index: {}", entry.index);
-        self.order_keeper
-            .write()
-            .await
-            .ensure_order(entry.index)
-            .await?;
-
+        let lg = self.write_lock.lock().await;
         // TODO: use group commit to improve performance
-        self.replog
+        let index = self
+            .replog
             .write()
             .await
-            .append(vec![entry.clone()])
+            .append(vec![entry.clone()], false)
             .await
             .unwrap();
+        info!("write at index: {index}");
+        entry.index = index;
 
+        let (tx, rx) = mpsc::channel(3);
         if let Some(i) = self.input.load().as_ref() {
             i.send(EntryWithNotifierSender {
                 entry: entry.clone(),
@@ -349,13 +355,14 @@ impl Shard {
             })
             .await?;
         }
+        drop(lg);
 
-        self.order_keeper
-            .write()
-            .await
-            .pass_order(entry.index)
-            .await;
-        info!("pass order, index: {}", entry.index);
+        // self.order_keeper
+        //     .write()
+        //     .await
+        //     .pass_order(entry.index)
+        //     .await;
+        // info!("pass order, index: {}", entry.index);
 
         Ok(EntryWithNotifierReceiver {
             entry,
@@ -370,16 +377,17 @@ impl Shard {
         //     .ensure_order(entry.index)
         //     .await?;
 
-        let last_index = self.replog.read().await.last_index() + 1;
-        if last_index != entry.index {
-            bail!(ShardError::LogIndexLag(last_index));
+        let next_index = self.replog.read().await.next_index();
+        info!("last_index: {next_index}, entry index: {}", entry.index);
+        if next_index != entry.index {
+            bail!(ShardError::LogIndexLag(next_index));
         }
 
         // TODO: use group commit to improve performance
         self.replog
             .write()
             .await
-            .append(vec![entry.clone()])
+            .append(vec![entry.clone()], true)
             .await
             .unwrap();
 
@@ -405,11 +413,11 @@ impl Shard {
 
     pub async fn append_log_entry_to(
         self: Arc<Shard>,
-        addr: String,
+        addr: &str,
         en: Entry,
     ) -> std::result::Result<(), ShardError> {
         let shard_id = self.get_shard_id();
-        let mut client = CONNECTIONS.get_client(addr.clone()).await.unwrap();
+        let mut client = CONNECTIONS.get_client(addr).await.unwrap();
 
         let request = Request::new(ShardAppendLogRequest {
             shard_id,
@@ -435,11 +443,11 @@ impl Shard {
             return Err(ShardError::NotLeader);
         }
 
-        let mut last_applied_index = resp.get_ref().last_applied_index;
-        info!("last_applied_index from {}, {}", addr, last_applied_index);
+        let mut next_index = resp.get_ref().next_index;
+        info!("next_index from {}, {}", addr, next_index);
 
         for _i in 1..=3 {
-            if last_applied_index >= en.index {
+            if next_index >= en.index {
                 return Ok(());
             }
 
@@ -447,22 +455,22 @@ impl Shard {
                 .replog
                 .write()
                 .await
-                .entries(last_applied_index, en.index, 1024)
+                .entries(next_index, en.index, 1024)
                 .await;
 
             if let Err(_) = entries_res {
-                last_applied_index =
-                    match Self::install_snapshot_to(self.clone(), client.clone()).await {
-                        Err(_) => {
-                            return Err(ShardError::FailedToAppendLog);
-                        }
-                        Ok(v) => v,
-                    };
+                next_index = match Self::install_snapshot_to(self.clone(), client.clone()).await {
+                    Err(_) => {
+                        return Err(ShardError::FailedToAppendLog);
+                    }
+                    Ok(v) => v,
+                };
 
                 continue;
             }
 
             let ents = entries_res.unwrap();
+            info!("entries length: {}", ents.len());
 
             let request = Request::new(ShardAppendLogRequest {
                 shard_id,
@@ -498,35 +506,41 @@ impl Shard {
         self: Arc<Shard>,
         mut client: data_service_client::DataServiceClient<tonic::transport::Channel>,
     ) -> Result<u64 /*last_wal_index */> {
-        let snap = self.kv_store.create_snapshot_iter().await.unwrap();
+        let snap = self.kv_store.create_snapshot_iter().await?;
 
-        // let last_wal_index = shard.read().await.get_last_index().await; // FIXME: keep atomic with above
-        let last_wal_index = 0;
+        let next_wal_index = self.get_next_index().await; // FIXME: keep atomic with above
 
         let mut req_stream = vec![];
         for kv in snap.into_iter() {
-            let mut key = kv.0.to_owned();
-            let mut value = kv.1.to_owned();
+            let (key, value) = (kv.0.to_owned(), kv.1.to_owned());
 
-            let mut item = vec![];
-            item.append(&mut key);
-            item.append(&mut vec!['\n' as u8]);
-            item.append(&mut value);
+            // let mut item = vec![];
+            // item.append(&mut key);
+            // item.append(&mut vec!['\n' as u8]);
+            // item.append(&mut value);
+
+            // info!(
+            //     "kv data_piece: key: {}, value: {}",
+            //     String::from_utf8_lossy(&key),
+            //     String::from_utf8_lossy(&value)
+            // );
+            // info!("data_piece: {}", String::from_utf8_lossy(&item));
+
+            info!("install_snapshot_to, key: {:?}, value: {:?}", key, value);
 
             req_stream.push(ShardInstallSnapshotRequest {
                 shard_id: self.get_shard_id(),
-                data_piece: item,
-                last_wal_index,
+                next_index: next_wal_index,
+                entries: vec![shard_install_snapshot_request::Entry { key, value }],
             })
         }
 
         client
             .shard_install_snapshot(Request::new(stream::iter(req_stream)))
-            .await
-            .unwrap();
+            .await?;
         // ref: https://github.com/hyperium/tonic/blob/master/examples/routeguide-tutorial.md
 
-        return Ok(last_wal_index);
+        return Ok(next_wal_index);
     }
 }
 

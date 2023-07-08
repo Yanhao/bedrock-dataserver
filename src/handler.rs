@@ -5,7 +5,7 @@ use anyhow::Result;
 use futures::StreamExt;
 use futures_util::stream;
 use tonic::{Request, Response, Status, Streaming};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use idl_gen::replog_pb;
 use idl_gen::service_pb::data_service_server::DataService;
@@ -74,27 +74,20 @@ impl DataService for RealDataServer {
         }
 
         let mut entry_with_notifier = shard
-            .process_write(
-                "put",
-                req.get_ref().key.clone(),
-                req.get_ref().value.clone(),
-            )
+            .process_write("put", &req.get_ref().key, &req.get_ref().value)
             .await
-            .map_err(|_| Status::internal(""))?;
+            .map_err(|_| Status::internal("process write failed"))?;
 
         info!("start wait result");
-        match entry_with_notifier.wait_result().await {
-            Err(ShardError::NotLeader) => {
+        if let Err(e) = entry_with_notifier.wait_result().await {
+            if let Some(ShardError::NotLeader) = e.downcast_ref() {
                 error!("wait failed: not leader");
                 return Ok(Response::new(ShardWriteResponse { not_leader: true }));
             }
-            Err(e) => {
-                error!("wait failed: {}", e);
 
-                return Err(Status::internal("internal error"));
-            }
-            Ok(_) => {}
-        };
+            error!("wait failed: {}", e);
+            return Err(Status::internal("internal error"));
+        }
         info!("end wait result");
 
         shard
@@ -209,7 +202,7 @@ impl DataService for RealDataServer {
             create_ts: None,
             replicates: shard.get_replicates_strings(),
             is_leader: shard.is_leader(),
-            last_wal_index: shard.get_next_index(),
+            next_index: shard.get_next_index().await,
             leader_change_ts: Some(shard.get_leader_change_ts().into()),
             replicates_update_ts: None,
             leader: String::new(),
@@ -235,8 +228,10 @@ impl DataService for RealDataServer {
         if shard.get_leader_change_ts() > leader_change_leader_ts {
             let resp = Response::new(ShardAppendLogResponse {
                 is_old_leader: true,
-                last_applied_index: 0,
+                next_index: 0,
             });
+
+            info!("shard_append_log resp: {:?}", resp);
             return Ok(resp);
         }
 
@@ -250,24 +245,27 @@ impl DataService for RealDataServer {
                 value: e.value.clone(),
             };
             if let Err(e) = shard.append_log_entry(&e).await {
-                if let Some(ShardError::LogIndexLag(last_index)) = e.downcast_ref() {
-                    return Ok(Response::new(ShardAppendLogResponse {
+                if let Some(ShardError::LogIndexLag(next_index)) = e.downcast_ref() {
+                    warn!("log index lag, next_index: {next_index}");
+                    let resp = Response::new(ShardAppendLogResponse {
                         is_old_leader: false,
-                        last_applied_index: *last_index,
-                    }));
+                        next_index: *next_index,
+                    });
+
+                    info!("shard_append_log 1 resp: {:?}", resp);
+                    return Ok(resp);
                 }
             }
 
             shard.apply_entry(&e).await.unwrap();
         }
 
-        let last_index = shard.get_last_index().await;
-
         let resp = Response::new(ShardAppendLogResponse {
             is_old_leader: false,
-            last_applied_index: last_index,
+            next_index: shard.get_next_index().await,
         });
 
+        info!("shard_append_log 2 resp: {:?}", resp);
         Ok(resp)
     }
 
@@ -279,7 +277,8 @@ impl DataService for RealDataServer {
 
         let mut in_stream = req.into_inner();
         let first_piece = in_stream.next().await.unwrap().unwrap();
-        let last_wal_index = first_piece.last_wal_index;
+        let next_index = first_piece.next_index;
+        info!("shard_install_snapshot: next_index: {next_index}");
 
         let shard = self.get_shard(first_piece.shard_id).await?;
 
@@ -299,12 +298,12 @@ impl DataService for RealDataServer {
             // shard.kv_store.clear_data().await;
             shard
                 .kv_store
-                .install_snapshot(&piece.data_piece)
+                .install_snapshot(piece.entries)
                 .await
                 .unwrap();
         }
 
-        shard.reset_replog(last_wal_index).await.unwrap();
+        shard.reset_replog(next_index).await.unwrap();
         shard.set_installing_snapshot(false);
 
         Ok(Response::new(ShardInstallSnapshotResponse {}))
@@ -332,12 +331,10 @@ impl DataService for RealDataServer {
 
         shard.set_replicates(&socket_addrs).unwrap();
         shard.set_is_leader(true);
-        shard.save_meta().await.map_err(|_| {
-            Status::internal(
-                "save shard meta faile
-d",
-            )
-        })?;
+        shard
+            .save_meta()
+            .await
+            .map_err(|_| Status::internal("save shard meta failed"))?;
         shard.update_leader_change_ts(req.get_ref().leader_change_ts.to_owned().unwrap().into());
         shard.switch_role_to_leader().await.unwrap();
 
@@ -357,7 +354,7 @@ d",
             let shard = self.get_shard(first.shard_id_from).await?;
             let snap = shard.kv_store.create_snapshot_iter().await.unwrap();
 
-            let mut client = CONNECTIONS.get_client(first.target_address).await.unwrap();
+            let mut client = CONNECTIONS.get_client(&first.target_address).await.unwrap();
 
             let mut req_stream = vec![MigrateShardRequest {
                 shard_id_from: first.shard_id_from,

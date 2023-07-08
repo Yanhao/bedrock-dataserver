@@ -69,7 +69,7 @@ pub struct WalFile {
     pub sealed: bool,
 
     pub start_version: u64,
-    pub end_version: u64,
+    pub next_version: u64,
 }
 
 impl WalFile {
@@ -152,7 +152,7 @@ impl WalFile {
             next_entry_offset: footer_offset,
             sealed: true,
             start_version: footer.start_version,
-            end_version: footer.end_version,
+            next_version: footer.end_version + 1,
 
             footer: Some(Box::new(footer)),
             wal_entry_index: metas,
@@ -219,7 +219,7 @@ impl WalFile {
             next_entry_offset: wal_entry_offset,
 
             start_version: metas.first().unwrap().version,
-            end_version: metas.last().unwrap().version,
+            next_version: metas.last().unwrap().version + 1,
 
             wal_entry_index: metas,
         })
@@ -259,17 +259,18 @@ impl WalFile {
             bail!(WalError::WalFileFull);
         }
 
+        info!("wal file next_version: {}", self.next_version);
         let meta = WalEntryMeta {
             entry_offset: self.next_entry_offset,
             entry_length: ent.encoded_len() as u64,
-            version: ent.index,
+            version: self.next_version,
         };
 
         let entry_header = WalEntryHeader {
             offset: meta.entry_offset,
             entry_length: ent.encoded_len() as u64,
 
-            version: ent.index,
+            version: self.next_version,
             checksum: 0,
             prev_entry_offset: 1,
             padding_: [0; 80],
@@ -277,7 +278,7 @@ impl WalFile {
 
         let a = entry_header.offset;
         let b = entry_header.version;
-        debug!("append meta header: offset: {}, version: {}", a, b);
+        info!("append meta header: offset: {}, version: {}", a, b);
 
         let entry_header_data: &[u8] = unsafe {
             slice::from_raw_parts(
@@ -296,19 +297,25 @@ impl WalFile {
 
         self.next_entry_offset += entry_buf.len() as u64;
         if let Err(e) = self.file.seek(SeekFrom::Start(meta.entry_offset)).await {
+            error!("file seek to failed, err: {e}");
             bail!(WalError::FailedToSeek);
         }
 
-        if let Err(_) = self.file.write(&entry_buf).await {
+        if let Err(e) = self.file.write(&entry_buf).await {
+            error!("file write failed, err: {e}");
             bail!(WalError::FailedToWrite);
         }
         self.wal_entry_index.push(meta);
-        self.end_version = ent.index;
+        self.next_version += 1;
+        info!("wal file next_version 2: {}", self.next_version);
 
         Ok(())
     }
 
-    pub async fn create_new_wal_file(path: impl AsRef<Path>) -> Result<WalFile> {
+    pub async fn create_new_wal_file(
+        path: impl AsRef<Path>,
+        start_version: u64,
+    ) -> Result<WalFile> {
         if path.as_ref().exists() {
             error!("the wal file already exists!");
             bail!(WalError::FileExists);
@@ -344,7 +351,7 @@ impl WalFile {
         debug!("wal file header length: {}", wal_header_as_data.len());
 
         if let Err(e) = file.write(wal_header_as_data).await {
-            error!("failed to write wal file header");
+            error!("failed to write wal file header, err: {e}");
             bail!(WalError::FailedToWrite);
         }
 
@@ -356,8 +363,8 @@ impl WalFile {
             wal_entry_index: vec![],
             next_entry_offset: 4096,
             sealed: false,
-            start_version: 0,
-            end_version: 0,
+            start_version,
+            next_version: start_version,
         })
     }
 
@@ -423,8 +430,8 @@ impl WalFile {
         self.start_version
     }
 
-    pub fn last_version(&self) -> u64 {
-        self.end_version
+    pub fn next_version(&self) -> u64 {
+        self.next_version
     }
 
     pub fn suffix(&self) -> u64 {
@@ -442,14 +449,19 @@ impl WalFile {
         self.wal_entry_index.len() as u64
     }
 
-    pub async fn entries(&mut self, start_version: u64, end_version: u64) -> Result<Vec<Entry>> {
-        if start_version < self.start_version || end_version > self.end_version {
+    pub async fn entries(
+        &mut self,
+        start_version: u64,
+        end_version: u64, /* start_version..=end_version */
+    ) -> Result<Vec<Entry>> {
+        if start_version < self.start_version || end_version >= self.next_version {
             bail!(WalError::InvalidParameter);
         }
 
         let start_index = start_version - self.start_version;
-        let end_index = self.end_version - end_version;
+        let end_index = start_index + (end_version - start_version);
 
+        info!("start_index: {start_index}, end_index: {end_index}");
         let target_meta = &(self.wal_entry_index)[start_index as usize..={ end_index as usize }];
 
         let mut ret = vec![];
@@ -476,38 +488,22 @@ impl WalFile {
         Ok(ret)
     }
 
-    pub async fn discard(&mut self, version: u64) -> Result<()> {
+    pub async fn discard(&mut self, next_version: u64) -> Result<()> {
         self.sealed = false;
-        self.end_version = version;
+        self.next_version = next_version;
 
-        let index = version - self.first_version();
+        let entry_offset = if next_version == self.first_version() {
+            4096
+        } else {
+            let index = next_version - self.first_version() - 1;
+            self.wal_entry_index[index as usize].entry_offset
+        };
 
-        let entry_offset = self.wal_entry_index[index as usize].entry_offset;
         self.next_entry_offset = entry_offset;
         self.footer = None;
 
-        self.file.set_len(entry_offset).await.unwrap();
+        self.file.set_len(entry_offset).await?;
 
         Ok(())
     }
 }
-
-// impl Ord for WalFile {
-//     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-//         return u64::cmp(&self.suffix(), &other.suffix());
-//     }
-// }
-
-// impl Eq for WalFile {}
-
-// impl PartialEq for WalFile {
-//     fn eq(&self, other: &Self) -> bool {
-//         return self.suffix() == other.suffix();
-//     }
-// }
-
-// impl PartialOrd for WalFile {
-//     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-//         return u64::partial_cmp(&self.suffix(), &other.suffix());
-//     }
-// }

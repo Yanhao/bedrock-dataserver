@@ -24,11 +24,11 @@ impl Connections {
 
     pub async fn get_client(
         &self,
-        addr: String,
+        addr: &str,
     ) -> Result<data_service_client::DataServiceClient<Channel>> {
         // let sock_addr: SocketAddr = addr.parse().unwrap();
 
-        if let Some(c) = self.conns.read().await.get(&addr) {
+        if let Some(c) = self.conns.read().await.get(addr) {
             info!("get connection to http://{} from connection pool", addr);
             return Ok(c.clone());
         }
@@ -39,7 +39,10 @@ impl Connections {
             .await
             .unwrap();
 
-        self.conns.write().await.insert(addr, client.clone());
+        self.conns
+            .write()
+            .await
+            .insert(addr.to_owned(), client.clone());
 
         Ok(client)
     }

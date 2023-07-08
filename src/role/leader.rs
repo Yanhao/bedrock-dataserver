@@ -41,7 +41,7 @@ impl Leader {
 
                         let replicates = shard.get_replicates();
                         'inner: for addr in replicates.iter() {
-                            match shard.clone().append_log_entry_to(addr.to_string(), en.entry.clone()).await {
+                            match shard.clone().append_log_entry_to(&addr.to_string(), en.entry.clone()).await {
                                 Err(ShardError::NotLeader) => {
                                     shard.set_is_leader(false);
                                     shard.switch_role_to_follower().await.unwrap();

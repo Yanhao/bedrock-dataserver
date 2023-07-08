@@ -18,6 +18,9 @@ pub enum MemLogError {
     EmptyRepLog,
     #[error("compact failed")]
     FailedToCompact,
+
+    #[error("base error")]
+    BaseError,
 }
 
 pub struct MemLog {
@@ -63,7 +66,7 @@ impl WalTrait for MemLog {
             bail!(MemLogError::EntryCompacted)
         }
 
-        if hi > self.last_index() + 1 {
+        if hi > self.next_index() {
             bail!(MemLogError::IndexOutOfBound)
         }
 
@@ -76,16 +79,16 @@ impl WalTrait for MemLog {
         Ok(Self::limit_size(ret.to_owned(), max_size))
     }
 
-    async fn append(&mut self, ents: Vec<Entry>) -> Result<()> {
+    async fn append(&mut self, ents: Vec<Entry>, discard: bool) -> Result<u64> {
         if ents.len() == 0 {
-            return Ok(());
+            bail!(MemLogError::BaseError);
         }
 
         let first = self.first_index();
-        let last = self.last_index();
+        let last = self.next_index() - 1;
 
         if last < first {
-            return Ok(());
+            bail!(MemLogError::BaseError);
         }
 
         let mut new_ents: Vec<Entry> = vec![];
@@ -106,7 +109,7 @@ impl WalTrait for MemLog {
             self.ents.append(&mut new_ents);
         }
 
-        Ok(())
+        Ok(self.next_index() - 1)
     }
 
     async fn compact(&mut self, compact_index: u64) -> Result<()> {
@@ -114,7 +117,7 @@ impl WalTrait for MemLog {
         if compact_index <= offset {
             bail!(MemLogError::FailedToCompact);
         }
-        if compact_index > self.last_index() {
+        if compact_index > self.next_index() - 1 {
             bail!(MemLogError::IndexOutOfBound);
         }
         let i = (compact_index - offset) as usize;
@@ -131,14 +134,14 @@ impl WalTrait for MemLog {
         Ok(())
     }
 
-    fn last_index(&self) -> u64 {
+    fn first_index(&self) -> u64 {
+        self.ents.len() as u64 + 1
+    }
+
+    fn next_index(&self) -> u64 {
         if self.ents.is_empty() {
             return 0;
         }
-        self.ents[0].index + self.ents.len() as u64 - 1
-    }
-
-    fn first_index(&self) -> u64 {
-        self.ents.len() as u64 + 1
+        self.ents[0].index + self.ents.len() as u64
     }
 }

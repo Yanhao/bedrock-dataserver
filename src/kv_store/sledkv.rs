@@ -2,9 +2,10 @@ use std::iter::Iterator;
 use std::path::PathBuf;
 
 use anyhow::{bail, Result};
+use idl_gen::service_pb::shard_install_snapshot_request;
 use sled;
 use tokio::fs::remove_dir_all;
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 
 use crate::config::CONFIG;
 
@@ -132,46 +133,77 @@ impl Iterator for StoreIter {
     type Item = (Vec<u8>, Vec<u8>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.iter.next() {
-            None => None,
-            Some(v) => {
-                let v = v.unwrap();
-                let key = v.0;
-                let value = v.1;
+        let item = self.iter.next()?.unwrap();
+        let (key, value) = item;
 
-                Some((key.as_ref().to_owned(), value.as_ref().to_owned()))
-            }
-        }
+        Some((key.as_ref().to_owned(), value.as_ref().to_owned()))
     }
 }
 
 impl SledStore {
     pub async fn create_snapshot_iter(&self) -> Result<impl Iterator<Item = (Vec<u8>, Vec<u8>)>> {
+        info!("creat snapshot iterator ...");
+
+        for i in self.db.iter() {
+            match i {
+                Err(e) => {
+                    error!("wrong item, err: {e}");
+                }
+                Ok(v) => {
+                    let (k, v) = v;
+                    info!("iterator: key: {:?}, value: {:?}", k.as_ref(), v.as_ref());
+                }
+            }
+        }
+
         Ok(StoreIter {
             iter: self.db.iter(),
         })
     }
 
-    pub async fn install_snapshot(&self, piece: &[u8]) -> Result<()> {
-        let piece = piece.to_owned();
-        let mut ps = piece.split(|b| *b == '\n' as u8);
+    pub async fn install_snapshot(
+        &self,
+        entries: Vec<shard_install_snapshot_request::Entry>,
+    ) -> Result<()> {
+        // info!("piece: {}", String::from_utf8_lossy(piece));
 
-        let key = ps.next().unwrap().to_owned();
-        let value = ps.next().unwrap().to_owned();
-        assert!(ps.next().is_none());
+        // let piece = piece.to_owned();
+        // let mut ps = piece.split(|b| *b == '\n' as u8);
+        // info!("split : {ps:?}");
 
-        self.kv_set(&key, &value).await.unwrap();
+        // let key = ps.next().unwrap().to_owned();
+        // let value = ps.next().unwrap().to_owned();
+        // assert!(ps.next().is_none());
+        // info!(
+        //     "kv piece: key: {}, value: {}",
+        //     String::from_utf8_lossy(&key),
+        //     String::from_utf8_lossy(&value)
+        // );
+
+        for ent in entries.iter() {
+            info!(
+                "install_snapshot, key: {:?}, value: {:?}",
+                ent.key, ent.value
+            );
+
+            self.kv_set(&ent.key, &ent.value).await.inspect_err(|e| {
+                error!(
+                    "install_snapshot, kv_set failed, err: {e}, key: {:?}, value: {:?}",
+                    ent.key, ent.value
+                )
+            })?;
+        }
 
         Ok(())
     }
 
-    pub async fn create_split_iter(
-        &self,
-        start_key: &[u8],
-        end_key: &[u8],
-    ) -> Result<impl Iterator<Item = (Vec<u8>, Vec<u8>)>> {
-        Ok(StoreIter {
-            iter: self.db.range(start_key..end_key),
-        })
-    }
+    // pub async fn create_split_iter(
+    //     &self,
+    //     start_key: &[u8],
+    //     end_key: &[u8],
+    // ) -> Result<impl Iterator<Item = (Vec<u8>, Vec<u8>)>> {
+    //     Ok(StoreIter {
+    //         iter: self.db.range(start_key..end_key),
+    //     })
+    // }
 }

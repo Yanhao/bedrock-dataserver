@@ -3,7 +3,7 @@ use std::str::FromStr;
 
 use anyhow::{bail, Result};
 use async_trait::async_trait;
-use tokio::fs::{create_dir_all, remove_dir_all};
+use tokio::fs::{self, create_dir_all, remove_dir_all};
 use tracing::{debug, error, info};
 
 use idl_gen::replog_pb::Entry;
@@ -11,15 +11,16 @@ use idl_gen::replog_pb::Entry;
 use super::{wal_file, WalError, WalTrait};
 use crate::config::CONFIG;
 
-const MAX_ENTRY_COUNT: u64 = 100;
+const MAX_ENTRY_COUNT: u64 = 10;
 
 pub struct Wal {
+    shard_id: u64,
     wal_files: Vec<wal_file::WalFile>,
     dir: PathBuf,
 }
 
 impl Wal {
-    fn suffix(path: impl AsRef<Path>) -> u64 {
+    fn wal_file_suffix(path: impl AsRef<Path>) -> u64 {
         let path = path.as_ref().as_os_str().to_str().unwrap();
         let suffix_str = path.split(".").last().unwrap();
         let suffix = suffix_str.parse().unwrap();
@@ -29,12 +30,11 @@ impl Wal {
     fn generage_path(shard_id: u64) -> PathBuf {
         let wal_dir: PathBuf = CONFIG.read().wal_directory.as_ref().unwrap().into();
 
-        info!("shard_id: 0x{:016x}", shard_id);
         let storage_id: u32 = ((shard_id & 0xFFFFFFFF_00000000) >> 32) as u32;
         let shard_isn: u32 = (shard_id & 0x00000000_FFFFFFFF) as u32;
         info!(
-            "storage_id: 0x{:08x}, shard_isn: 0x{:08x}",
-            storage_id, shard_isn
+            "shard_id: 0x{:016x}, {}; storage_id: 0x{:08x}, shard_isn: 0x{:08x}",
+            shard_id, shard_id, storage_id, shard_isn
         );
 
         wal_dir
@@ -42,7 +42,7 @@ impl Wal {
             .join::<String>(format!("{:08x}", shard_isn))
     }
 
-    async fn load(dir: impl AsRef<Path>) -> Result<Wal> {
+    async fn load(dir: impl AsRef<Path>, shard_id: u64) -> Result<Wal> {
         if !dir.as_ref().exists() {
             error!("file not exists: path: {}", dir.as_ref().display());
             bail!(WalError::FileNotExists);
@@ -52,22 +52,25 @@ impl Wal {
             bail!(WalError::WrongFilePath);
         }
 
+        info!("start load wal at: {} ...", dir.as_ref().display());
         let mut wal_file_path = vec![];
         for entry in dir.as_ref().read_dir().unwrap() {
             if let Ok(entry) = entry {
+                info!("load wal file: {}", entry.path().display());
                 wal_file_path.push(entry.path());
             }
         }
         if wal_file_path.is_empty() {
             return Ok(Wal {
+                shard_id,
                 wal_files: vec![],
                 dir: dir.as_ref().to_owned(),
             });
         }
 
         wal_file_path.sort_by(|a: &PathBuf, b: &PathBuf| {
-            let a_suffix = Self::suffix(a.as_path());
-            let b_suffix = Self::suffix(b.as_path());
+            let a_suffix = Self::wal_file_suffix(a.as_path());
+            let b_suffix = Self::wal_file_suffix(b.as_path());
             u64::cmp(&a_suffix, &b_suffix)
         });
 
@@ -85,13 +88,14 @@ impl Wal {
                 .await
                 .unwrap();
 
-            debug!("wal last index: {}", wal_file.last_version());
+            debug!("wal next index: {}", wal_file.next_version());
 
             wal_files.push(wal_file);
             i += 1;
         }
 
         Ok(Wal {
+            shard_id,
             wal_files,
             dir: dir.as_ref().to_owned(),
         })
@@ -106,7 +110,7 @@ impl Wal {
 
     pub async fn load_wal_by_shard_id(shard_id: u64) -> Result<Wal> {
         let wal_manager_dir = Self::generage_path(shard_id);
-        return Wal::load(wal_manager_dir).await;
+        return Wal::load(wal_manager_dir, shard_id).await;
     }
 
     fn generate_new_wal_file_path(&self) -> PathBuf {
@@ -123,19 +127,16 @@ impl Wal {
         Ok(())
     }
 
-    async fn discard(&mut self, index: u64) -> Result<()> {
+    async fn discard(&mut self, next_index: u64) -> Result<()> {
         if self.wal_files.is_empty() {
             return Ok(());
         }
-        loop {
-            if self.wal_files.last().unwrap().last_version() < index {
-                break;
-            }
 
-            if self.wal_files.last().unwrap().first_version() > index {
+        while self.wal_files.last().unwrap().next_version() > next_index {
+            if self.wal_files.last().unwrap().first_version() > next_index {
                 let wal_file = self.wal_files.pop().unwrap();
 
-                std::fs::remove_file(wal_file.path.clone()).unwrap();
+                std::fs::remove_file(&wal_file.path).unwrap();
 
                 continue;
             }
@@ -143,10 +144,9 @@ impl Wal {
             self.wal_files
                 .last_mut()
                 .unwrap()
-                .discard(index)
+                .discard(next_index)
                 .await
                 .unwrap();
-            break;
         }
 
         Ok(())
@@ -155,7 +155,14 @@ impl Wal {
 
 #[async_trait]
 impl WalTrait for Wal {
-    async fn entries(&mut self, mut lo: u64, hi: u64, max_size: u64) -> Result<Vec<Entry>> {
+    async fn entries(
+        &mut self,
+        mut lo: u64,
+        hi: u64, /* lo..=hi */
+        max_size: u64,
+    ) -> Result<Vec<Entry>> {
+        info!("wal entries: lo: {lo}, hi: {hi}");
+
         if hi - lo >= MAX_ENTRY_COUNT {
             bail!(WalError::TooManyEntries);
         }
@@ -172,51 +179,56 @@ impl WalTrait for Wal {
             bail!(WalError::InvalidParameter);
         }
 
-        if hi >= self.last_index() + 1 {
+        if hi >= self.next_index() {
             bail!(WalError::InvalidParameter);
         }
 
         let mut ret = vec![];
-
-        let first_index = self.first_index();
-        let last_index = self.last_index();
-
         for file in self.wal_files.iter_mut() {
-            if lo >= hi {
-                break;
-            }
-
-            if first_index < lo {
+            info!(
+                "wal files: first_version: {}, next_version: {}",
+                file.first_version(),
+                file.next_version()
+            );
+            if file.next_version() < lo {
                 continue;
             }
-            if hi < last_index {
+
+            if lo > hi {
                 break;
             }
 
-            match file
-                .entries(
-                    lo,
-                    if hi < file.last_version() {
-                        hi
-                    } else {
-                        file.last_version()
-                    },
-                )
-                .await
-            {
-                Err(e) => {
-                    bail!(WalError::InvalidParameter);
-                }
-                Ok(mut v) => {
-                    ret.append(&mut v);
-                }
+            if hi < file.first_version() {
+                break;
             }
 
-            if hi < file.last_version() {
-                lo = hi;
+            info!(
+                "call wal_file entries, lo: {}, hi: {}",
+                lo,
+                if hi < file.next_version() {
+                    hi
+                } else {
+                    file.next_version() - 1
+                },
+            );
+
+            let mut ents = file
+                .entries(
+                    lo,
+                    if hi < file.next_version() {
+                        hi
+                    } else {
+                        file.next_version() - 1
+                    },
+                )
+                .await?;
+            ret.append(&mut ents);
+
+            lo = if hi < file.next_version() {
+                hi + 1
             } else {
-                lo = file.last_version();
-            }
+                file.next_version()
+            };
         }
 
         Ok(ret)
@@ -230,26 +242,30 @@ impl WalTrait for Wal {
         self.wal_files.first().unwrap().first_version()
     }
 
-    fn last_index(&self) -> u64 {
+    fn next_index(&self) -> u64 {
         if self.wal_files.is_empty() {
             return 0;
         }
 
-        self.wal_files.last().unwrap().last_version()
+        self.wal_files.last().unwrap().next_version()
     }
 
-    async fn append(&mut self, ents: Vec<Entry>) -> Result<()> {
-        self.discard(ents.first().unwrap().index).await?;
+    async fn append(&mut self, ents: Vec<Entry>, discard: bool) -> Result<u64> {
+        if discard {
+            self.discard(ents.first().unwrap().index).await?;
+        }
 
         let mut iter = ents.into_iter().peekable();
         loop {
-            let Some(ent)= iter.peek() else {
+            let Some(ent) = iter.peek() else {
                 break;
             };
 
             if self.wal_files.is_empty() || self.wal_files.last().unwrap().is_sealed() {
                 let path = self.generate_new_wal_file_path();
-                let new_wal_file = wal_file::WalFile::create_new_wal_file(path).await.unwrap();
+                let new_wal_file = wal_file::WalFile::create_new_wal_file(path, self.next_index())
+                    .await
+                    .unwrap();
 
                 self.wal_files.push(new_wal_file);
             }
@@ -269,26 +285,60 @@ impl WalTrait for Wal {
                 }
                 return Err(e);
             }
+
             iter.next();
         }
 
-        Ok(())
+        Ok(self.next_index() - 1)
     }
 
     async fn compact(&mut self, compact_index: u64) -> Result<()> {
+        if self.next_index() == compact_index {
+            return Ok(());
+        }
+
+        if self.next_index() < compact_index {
+            self.wal_files = vec![];
+            remove_files_in_dir(self.dir.clone()).await?;
+
+            let path = self.generate_new_wal_file_path();
+            let new_wal_file = wal_file::WalFile::create_new_wal_file(path, compact_index)
+                .await
+                .unwrap();
+
+            self.wal_files.push(new_wal_file);
+
+            return Ok(());
+        }
+
+        info!("compact log to {compact_index}");
+        return Ok(());
+
         if self.wal_files.first().unwrap().first_version() >= compact_index {
             return Ok(());
         }
 
-        while self.wal_files.len() > 0 {
-            if self.wal_files.first().unwrap().last_version() < compact_index {
-                let path = self.wal_files.first().unwrap().path.clone();
-                self.wal_files.drain(0..0);
+        // while !self.wal_files.is_empty() {
+        //     if self.wal_files.first().unwrap().last_version() < compact_index {
+        //         let path = self.wal_files.first().unwrap().path.clone();
 
-                std::fs::remove_file(path).unwrap();
-            }
-        }
+        //         self.wal_files.drain(0..0); // FIXME: another way?
+
+        //         info!("remove wal file: {}", path.display());
+        //         std::fs::remove_file(path);
+        //     }
+        // }
 
         Ok(())
     }
+}
+
+async fn remove_files_in_dir<P: AsRef<Path>>(path: P) -> Result<()> {
+    let mut dir = fs::read_dir(path).await?;
+    while let Some(entry) = dir.next_entry().await? {
+        if entry.file_type().await?.is_file() {
+            fs::remove_file(entry.path()).await?;
+        }
+    }
+    Ok(())
 }
