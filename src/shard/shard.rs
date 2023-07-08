@@ -249,10 +249,8 @@ impl Shard {
         self.shard_meta.read().replicates.clone()
     }
 
-    pub fn set_replicates(&self, replicates: &[SocketAddr]) -> Result<()> {
+    pub fn set_replicates(&self, replicates: &[SocketAddr]) {
         self.shard_meta.write().replicates = replicates.iter().map(|s| s.to_string()).collect();
-
-        Ok(())
     }
 
     pub async fn save_meta(&self) -> Result<()> {

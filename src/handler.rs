@@ -329,13 +329,13 @@ impl DataService for RealDataServer {
             .map(|x| x.parse().unwrap())
             .collect::<Vec<_>>();
 
-        shard.set_replicates(&socket_addrs).unwrap();
+        shard.set_replicates(&socket_addrs);
         shard.set_is_leader(true);
+        shard.update_leader_change_ts(req.get_ref().leader_change_ts.to_owned().unwrap().into());
         shard
             .save_meta()
             .await
             .map_err(|_| Status::internal("save shard meta failed"))?;
-        shard.update_leader_change_ts(req.get_ref().leader_change_ts.to_owned().unwrap().into());
         shard.switch_role_to_leader().await.unwrap();
 
         info!("successfully transfer shard leader");
