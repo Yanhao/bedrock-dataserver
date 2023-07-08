@@ -7,7 +7,7 @@ use tracing::{error, info};
 use crate::metadata::{Meta, METADATA};
 use crate::ms_client::MS_CLIENT;
 
-pub static SHARD_SYNCER: Lazy<RwLock<ShardSyncer>> = Lazy::new(|| Default::default());
+pub static SHARD_SYNCER: Lazy<RwLock<ShardSyncer>> = Lazy::new(Default::default);
 
 #[derive(Default)]
 pub struct ShardSyncer {

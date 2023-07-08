@@ -453,9 +453,9 @@ impl WalFile {
 
     pub fn suffix(&self) -> u64 {
         let path = self.path.as_os_str().to_str().unwrap();
-        let suffix_str = path.split(".").last().unwrap();
-        let suffix = suffix_str.parse().unwrap();
-        suffix
+        let suffix_str = path.split('.').last().unwrap();
+        
+        suffix_str.parse().unwrap()
     }
 
     pub fn is_sealed(&self) -> bool {

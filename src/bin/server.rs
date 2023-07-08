@@ -10,7 +10,7 @@ use clap::{App, Arg};
 use tokio::signal;
 use tonic::transport::Server as GrpcServer;
 use tracing::{debug, error, info};
-use tracing_subscriber;
+
 
 use idl_gen::service_pb::data_service_server::DataServiceServer;
 

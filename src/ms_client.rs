@@ -11,7 +11,7 @@ use crate::config::CONFIG;
 use crate::metadata::ShardMetaIter;
 use crate::metadata::METADATA;
 
-pub static MS_CLIENT: Lazy<MsClient> = Lazy::new(|| MsClient::new());
+pub static MS_CLIENT: Lazy<MsClient> = Lazy::new(MsClient::new);
 
 struct SyncShardIter<T>
 where
@@ -48,7 +48,7 @@ impl Iterator for SyncShardIter<ShardMetaIter> {
             dataserver_addr: CONFIG.read().get_self_socket_addr().to_string(),
             sync_ts: Some(self.sync_ts.clone()),
             shards: vec![],
-            is_last_piece: if shard == None {
+            is_last_piece: if shard.is_none() {
                 self.last = true;
                 true
             } else {
@@ -79,8 +79,8 @@ impl MsClient {
 
     fn get_ms_addr(&self) -> String {
         let meta = METADATA.read().get_meta();
-        let addr = meta.metaserver_leader;
-        addr
+        
+        meta.metaserver_leader
     }
 
     pub async fn heartbeat(&self, _restarting: bool) -> Result<()> {

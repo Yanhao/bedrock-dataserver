@@ -23,9 +23,9 @@ pub struct Wal {
 impl Wal {
     fn wal_file_suffix(path: impl AsRef<Path>) -> u64 {
         let path = path.as_ref().as_os_str().to_str().unwrap();
-        let suffix_str = path.split(".").last().unwrap();
-        let suffix = suffix_str.parse().unwrap();
-        suffix
+        let suffix_str = path.split('.').last().unwrap();
+        
+        suffix_str.parse().unwrap()
     }
 
     fn wal_dir_path(shard_id: u64) -> PathBuf {
@@ -91,16 +91,16 @@ impl Wal {
 
     pub async fn load_wal_by_shard_id(shard_id: u64) -> Result<Wal> {
         let wal_manager_dir = Self::wal_dir_path(shard_id);
-        return Wal::load(wal_manager_dir, shard_id).await;
+        Wal::load(wal_manager_dir, shard_id).await
     }
 
     fn generate_new_wal_file_path(&self) -> PathBuf {
-        if self.wal_files.len() == 0 {
+        if self.wal_files.is_empty() {
             return self.dir.clone().join(String::from_str("wal.0").unwrap());
         }
 
         let suffix = self.wal_files.last().unwrap().suffix();
-        return self.dir.clone().join(format!("wal.{}", suffix + 1));
+        self.dir.clone().join(format!("wal.{}", suffix + 1))
     }
 
     pub async fn remove_wal(shard_id: u64) -> Result<()> {
@@ -151,7 +151,7 @@ impl WalTrait for Wal {
             bail!(WalError::TooManyEntries);
         }
 
-        if self.wal_files.len() == 0 {
+        if self.wal_files.is_empty() {
             bail!(WalError::EmptyWalFiles);
         }
 

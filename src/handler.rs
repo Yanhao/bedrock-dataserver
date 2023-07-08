@@ -133,7 +133,7 @@ impl DataService for RealDataServer {
                 .collect(),
             no_left: shard.is_key_within_shard(&req.get_ref().start_key)
                 && shard.is_key_within_shard(&req.get_ref().end_key)
-                && kvs.len() == 0,
+                && kvs.is_empty(),
         }));
     }
 

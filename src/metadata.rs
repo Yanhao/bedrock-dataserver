@@ -84,7 +84,7 @@ impl MetaData {
 impl Meta<ShardMetaIter> for MetaData {
     fn is_shard_exists(&self, shard_id: u64) -> Result<bool> {
         let key = Self::shard_key(shard_id);
-        Ok(if let None = self.meta_db.get(&key)? {
+        Ok(if let None = self.meta_db.get(key)? {
             false
         } else {
             true
@@ -97,14 +97,14 @@ impl Meta<ShardMetaIter> for MetaData {
         let mut buf = Vec::<u8>::new();
         meta.encode(&mut buf).unwrap();
 
-        self.meta_db.insert(&key, buf).map_err(|_| anyhow!(""))?;
+        self.meta_db.insert(key, buf).map_err(|_| anyhow!(""))?;
         Ok(())
     }
 
     fn remove_shard(&self, shard_id: u64) -> Result<()> {
         let key = Self::shard_key(shard_id);
 
-        self.meta_db.remove(&key).map_err(|_| anyhow!(""))?;
+        self.meta_db.remove(key).map_err(|_| anyhow!(""))?;
         Ok(())
     }
 

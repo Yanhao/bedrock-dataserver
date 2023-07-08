@@ -106,7 +106,7 @@ impl SledStore {
         Ok(kvs)
     }
 
-    pub async fn kv_delete_range(&self, start_key: &[u8], end_key: &[u8]) -> Result<()> {
+    pub async fn kv_delete_range(&self, start_key: &[u8], _end_key: &[u8]) -> Result<()> {
         // FIXME:
         let start_key: Vec<u8> = start_key.into();
 

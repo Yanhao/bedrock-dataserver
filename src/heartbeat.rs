@@ -6,7 +6,7 @@ use tracing::{error, info};
 
 use crate::ms_client::MS_CLIENT;
 
-pub static HEART_BEATER: Lazy<RwLock<HeartBeater>> = Lazy::new(|| Default::default());
+pub static HEART_BEATER: Lazy<RwLock<HeartBeater>> = Lazy::new(Default::default);
 
 #[derive(Default)]
 pub struct HeartBeater {

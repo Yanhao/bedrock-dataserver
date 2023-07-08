@@ -29,7 +29,7 @@ use crate::store::{kv_store, SledStore};
 use crate::wal::{Wal, WalTrait};
 
 const INPUT_CHANNEL_LEN: usize = 10240;
-const SHARD_META_KEY: &'static str = "shard_meta";
+const SHARD_META_KEY: &str = "shard_meta";
 
 #[derive(Debug)]
 pub struct EntryWithNotifierSender {
@@ -50,7 +50,7 @@ impl EntryWithNotifierReceiver {
             .await
             .ok_or(anyhow!("wait result failed"))?;
 
-        let _a = res?;
+        res?;
 
         Ok(())
     }
@@ -77,7 +77,7 @@ impl Shard {
         let next_index = wal.next_index();
         info!("shard 0x{:016x}, next_index: {next_index}", meta.shard_id);
 
-        return Shard {
+        Shard {
             shard_meta: Arc::new(parking_lot::RwLock::new(meta)),
             kv_store,
             replog: Arc::new(RwLock::new(wal)),
@@ -87,7 +87,7 @@ impl Shard {
             write_lock: Mutex::new(()),
 
             role: RwLock::new(Role::NotReady),
-        };
+        }
     }
 
     pub async fn create_shard(req: &Request<CreateShardRequest>) -> Result<()> {
@@ -220,7 +220,7 @@ impl Shard {
     }
 
     pub fn get_leader(&self) -> String {
-        self.shard_meta.read().leader.clone().into()
+        self.shard_meta.read().leader.clone()
     }
 
     pub fn update_leader_change_ts(&self, t: time::SystemTime) {
@@ -297,7 +297,7 @@ impl Shard {
 
         let key = BigUint::from_bytes_be(key);
 
-        return min <= key && key < max;
+        min <= key && key < max
     }
 
     pub async fn create_split_iter(
@@ -431,7 +431,7 @@ impl Shard {
                 .await;
 
             if let Err(_) = entries_res {
-                next_index = Self::install_snapshot_to(self.clone(), client.clone(), &addr)
+                next_index = Self::install_snapshot_to(self.clone(), client.clone(), addr)
                     .await
                     .map_err(|_| ShardError::FailedToAppendLog)?;
 
@@ -501,7 +501,7 @@ impl Shard {
             .inspect_err(|e| error!("install snapshot to {addr} failed, err: {e}",))?;
         // ref: https://github.com/hyperium/tonic/blob/master/examples/routeguide-tutorial.md
 
-        return Ok(next_wal_index);
+        Ok(next_wal_index)
     }
 }
 

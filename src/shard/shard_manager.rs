@@ -9,7 +9,7 @@ use crate::wal::Wal;
 
 const _DEFAULT_SHARD_CAPACITY: u64 = 10240;
 
-pub static SHARD_MANAGER: Lazy<ShardManager> = Lazy::new(|| ShardManager::new());
+pub static SHARD_MANAGER: Lazy<ShardManager> = Lazy::new(ShardManager::new);
 
 pub struct ShardManager {
     shards: parking_lot::RwLock<HashMap<u64, Arc<Shard>>>,
@@ -17,9 +17,9 @@ pub struct ShardManager {
 
 impl ShardManager {
     fn new() -> Self {
-        return ShardManager {
+        ShardManager {
             shards: Default::default(),
-        };
+        }
     }
 
     async fn load_shard(&self, shard_id: u64) -> Result<Arc<Shard>> {

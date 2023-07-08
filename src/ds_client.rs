@@ -8,7 +8,7 @@ use tracing::{debug, info};
 
 use idl_gen::service_pb::data_service_client;
 
-pub static CONNECTIONS: Lazy<Connections> = Lazy::new(|| Connections::new());
+pub static CONNECTIONS: Lazy<Connections> = Lazy::new(Connections::new);
 
 pub struct Connections {
     conns: RwLock<HashMap<String, data_service_client::DataServiceClient<Channel>>>,

@@ -62,9 +62,9 @@ pub struct RangeLock {
 
 impl RangeLock {
     pub fn new() -> RangeLock {
-        return RangeLock {
+        RangeLock {
             data: BTreeSet::<LockItem>::new(),
-        };
+        }
     }
 
     pub fn lock_range(&mut self, start: u64, end: u64) {

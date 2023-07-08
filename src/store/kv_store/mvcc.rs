@@ -48,14 +48,14 @@ impl MvKvImpl {}
 
 #[async_trait]
 impl MvKvLite for MvKvImpl {
-    async fn kv_get_by_version(&mut self, version: u64, key: &[u8]) -> Result<Vec<u8>> {
+    async fn kv_get_by_version(&mut self, _version: u64, _key: &[u8]) -> Result<Vec<u8>> {
         // let key = key + '@' + BigUint::from(version).to_bytes_be();
         // let kvs = self.kv_store.kv_scan(start_key, end_key, 1).await?;
         // Ok(kvs[0].value)
         todo!()
     }
 
-    fn kv_range_by_version(&mut self, version: u64, start_key: &[u8], end_key: &[u8]) {
+    fn kv_range_by_version(&mut self, _version: u64, _start_key: &[u8], _end_key: &[u8]) {
         todo!()
     }
 
@@ -64,14 +64,14 @@ impl MvKvLite for MvKvImpl {
         Ok(())
     }
 
-    async fn kv_commit_tx(&mut self, key: &[u8], version: u64) -> Result<()> {
+    async fn kv_commit_tx(&mut self, _key: &[u8], _version: u64) -> Result<()> {
         // let key = key + '@' + BigUint::from(version).to_bytes_be();
         // self.kv_store.kv_set(key, value).await?;
 
         Ok(())
     }
 
-    async fn kv_abort_tx(&mut self, key: &[u8]) -> Result<()> {
+    async fn kv_abort_tx(&mut self, _key: &[u8]) -> Result<()> {
         // self.kv_store.kv_delete(key).await?;
 
         Ok(())
@@ -80,7 +80,7 @@ impl MvKvLite for MvKvImpl {
 
 #[async_trait]
 impl MvKv for MvKvImpl {
-    fn write_lock_range(&mut self, tx_id: u64, start_key: &[u8], end_key: &[u8]) {
+    fn write_lock_range(&mut self, _tx_id: u64, _start_key: &[u8], _end_key: &[u8]) {
         todo!()
         // let o = self.write_locks.lock_overlap(start_key, end_key);
         // if o.len() == 0 {
@@ -106,7 +106,7 @@ impl MvKv for MvKvImpl {
         // self.write_lock_waiters.lock_range(start_key, end_key);
     }
 
-    fn write_lock_record(&mut self, tx_id: u64, key: &[u8]) {
+    fn write_lock_record(&mut self, _tx_id: u64, _key: &[u8]) {
         todo!()
         // let key_int = BigUint::from_bytes_be(key);
         // let next_key_int = key_int + 1;
@@ -135,7 +135,7 @@ impl MvKv for MvKvImpl {
         // self.write_lock_waiters.lock_record(key);
     }
 
-    fn read_unlock(&mut self, tx_id: u64) {}
+    fn read_unlock(&mut self, _tx_id: u64) {}
 
     fn write_unlock(&mut self, tx_id: u64) {
         let txs = self.ongoing_txs.get(&tx_id).unwrap();
@@ -144,11 +144,11 @@ impl MvKv for MvKvImpl {
         }
     }
 
-    fn read_lock_range(&mut self, tx_id: u64, start_key: &[u8], end_key: &[u8]) {
+    fn read_lock_range(&mut self, _tx_id: u64, _start_key: &[u8], _end_key: &[u8]) {
         todo!()
     }
 
-    fn read_lock_record(&mut self, tx_id: u64, key: &[u8]) {
+    fn read_lock_record(&mut self, _tx_id: u64, _key: &[u8]) {
         todo!()
     }
 }

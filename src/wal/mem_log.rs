@@ -39,7 +39,7 @@ impl MemLog {
     }
 
     fn limit_size(ents: Vec<Entry>, max_size: u64) -> Vec<Entry> {
-        if ents.len() == 0 {
+        if ents.is_empty() {
             return Vec::new();
         }
 
@@ -55,7 +55,7 @@ impl MemLog {
             limit += 1;
         }
 
-        return ents[..limit].to_owned();
+        ents[..limit].to_owned()
     }
 }
 
@@ -82,7 +82,7 @@ impl WalTrait for MemLog {
     }
 
     async fn append(&mut self, ents: Vec<Entry>, _discard: bool) -> Result<u64> {
-        if ents.len() == 0 {
+        if ents.is_empty() {
             bail!(MemLogError::BaseError);
         }
 
