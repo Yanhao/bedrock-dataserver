@@ -23,6 +23,7 @@ use idl_gen::service_pb::{
 
 use crate::config::CONFIG;
 use crate::ds_client::CONNECTIONS;
+use crate::metadata::{Meta, METADATA};
 use crate::role::{Follower, Leader, Role};
 use crate::shard::ShardError;
 use crate::store::{kv_store, SledStore};
@@ -115,12 +116,11 @@ impl Shard {
             buf
         };
 
-        sled_db
-            .kv_set(SHARD_META_KEY.as_bytes(), &meta_buf)
-            .await
-            .unwrap();
+        sled_db.kv_set(SHARD_META_KEY.as_bytes(), &meta_buf).await?;
 
         Wal::create_wal_dir(shard_id).await?;
+
+        METADATA.write().put_shard(shard_id, meta)?;
 
         Ok(())
     }
@@ -152,10 +152,9 @@ impl Shard {
 
         let mut meta_buf = Vec::new();
         meta.encode(&mut meta_buf).unwrap();
-        sled_db
-            .kv_set(SHARD_META_KEY.as_bytes(), &meta_buf)
-            .await
-            .unwrap();
+        sled_db.kv_set(SHARD_META_KEY.as_bytes(), &meta_buf).await?;
+
+        METADATA.write().put_shard(shard_id, meta.clone())?;
 
         let wal = Wal::load_wal_by_shard_id(shard_id).await?;
 
@@ -177,6 +176,8 @@ impl Shard {
     pub async fn remove_shard(shard_id: u64) -> Result<()> {
         SledStore::remove(shard_id).await?;
         Wal::remove_wal(shard_id).await?;
+
+        METADATA.write().remove_shard(shard_id)?;
 
         Ok(())
     }
@@ -258,8 +259,11 @@ impl Shard {
         self.shard_meta.read().encode(&mut meta_buf).unwrap();
         self.kv_store
             .kv_set(SHARD_META_KEY.as_bytes(), &meta_buf)
-            .await
-            .unwrap();
+            .await?;
+
+        METADATA
+            .write()
+            .put_shard(self.get_shard_id(), self.shard_meta.read().clone())?;
 
         Ok(())
     }

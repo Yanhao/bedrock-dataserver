@@ -4,7 +4,6 @@ use std::path::Path;
 
 use anyhow::{anyhow, ensure, Result};
 use once_cell::sync::Lazy;
-use parking_lot::RwLock;
 use prost::Message;
 use serde::{Deserialize, Serialize};
 use sled;
@@ -15,13 +14,13 @@ use idl_gen::service_pb::ShardMeta;
 const METADATA_PATH: &str = "metadata.json";
 const METADATA_DIRECTORY: &str = "metadata";
 
-pub static METADATA: Lazy<RwLock<MetaData>> = Lazy::new(|| {
+pub static METADATA: Lazy<parking_lot::RwLock<MetaData>> = Lazy::new(|| {
     debug!("parse json metadata");
 
-    let json_raw = read_to_string(METADATA_PATH).unwrap();
-    let m: DsMeta = serde_json::from_str(&json_raw).unwrap();
+    let json_raw = read_to_string(METADATA_PATH).expect("read metadata failed");
+    let m: DsMeta = serde_json::from_str(&json_raw).expect("parse metadata failed");
 
-    RwLock::new(MetaData::new(m, METADATA_DIRECTORY).unwrap())
+    parking_lot::RwLock::new(MetaData::new(m, METADATA_DIRECTORY).unwrap())
 });
 
 pub trait Meta<T>
@@ -29,7 +28,7 @@ where
     T: Iterator<Item = ShardMeta>,
 {
     fn is_shard_exists(&self, shard_id: u64) -> Result<bool>;
-    fn add_shard(&self, shard_id: u64, meta: ShardMeta) -> Result<()>;
+    fn put_shard(&self, shard_id: u64, meta: ShardMeta) -> Result<()>;
     fn remove_shard(&self, shard_id: u64) -> Result<()>;
     fn shard_iter(&self) -> T;
 }
@@ -89,7 +88,7 @@ impl Meta<ShardMetaIter> for MetaData {
         Ok(self.meta_db.get(key)?.is_some())
     }
 
-    fn add_shard(&self, shard_id: u64, meta: ShardMeta) -> Result<()> {
+    fn put_shard(&self, shard_id: u64, meta: ShardMeta) -> Result<()> {
         let key = Self::shard_key(shard_id);
 
         let mut buf = Vec::<u8>::new();
