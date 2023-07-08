@@ -23,9 +23,9 @@ use idl_gen::service_pb::{
 
 use crate::config::get_self_socket_addr;
 use crate::ds_client::CONNECTIONS;
-use crate::kv_store::{self, SledStore};
 use crate::role::{Follower, Leader, Role};
 use crate::shard::ShardError;
+use crate::store::{kv_store, SledStore};
 use crate::wal::{Wal, WalTrait};
 
 const INPUT_CHANNEL_LEN: usize = 10240;
@@ -61,7 +61,7 @@ pub struct Shard {
 
     input: ArcSwapOption<mpsc::Sender<EntryWithNotifierSender>>,
 
-    pub kv_store: kv_store::SledStore,
+    pub kv_store: SledStore,
     pub replog: Arc<RwLock<Wal>>,
 
     write_lock: Mutex<()>,
@@ -73,7 +73,7 @@ pub struct Shard {
 }
 
 impl Shard {
-    fn new(kv_store: kv_store::SledStore, meta: ShardMeta, wal: Wal) -> Self {
+    fn new(kv_store: SledStore, meta: ShardMeta, wal: Wal) -> Self {
         let next_index = wal.next_index();
         info!("next_index: {next_index}");
 
@@ -93,7 +93,7 @@ impl Shard {
     pub async fn create_shard(req: &Request<CreateShardRequest>) -> Result<()> {
         let shard_id = req.get_ref().shard_id;
 
-        let sled_db = kv_store::SledStore::create(shard_id).await.unwrap();
+        let sled_db = SledStore::create(shard_id).await.unwrap();
         let meta = ShardMeta {
             shard_id,
             is_leader: get_self_socket_addr().to_string() == req.get_ref().leader,
@@ -132,7 +132,7 @@ impl Shard {
         next_index: u64,
         key_range: Range<Vec<u8>>,
     ) -> Result<Self> {
-        let sled_db = kv_store::SledStore::create(shard_id).await.unwrap();
+        let sled_db = SledStore::create(shard_id).await.unwrap();
 
         let meta = ShardMeta {
             shard_id,
@@ -163,7 +163,7 @@ impl Shard {
     }
 
     pub async fn load_shard(shard_id: u64) -> Result<Self> {
-        let sled_db = kv_store::SledStore::load(shard_id).await.unwrap();
+        let sled_db = SledStore::load(shard_id).await.unwrap();
 
         let meta_key = SHARD_META_KEY.as_bytes();
         let raw_meta = sled_db.kv_get(meta_key).await.unwrap();

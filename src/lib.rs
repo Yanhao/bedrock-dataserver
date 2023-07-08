@@ -10,13 +10,13 @@ pub mod error;
 pub mod format;
 pub mod handler;
 pub mod heartbeat;
-pub mod kv_store;
 pub mod metadata;
 mod ms_client;
 pub mod param_check;
 pub mod role;
 pub mod shard;
 mod shutdown;
+pub mod store;
 pub mod sync_shard;
 pub mod wal;
 
