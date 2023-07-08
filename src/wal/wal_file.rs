@@ -84,7 +84,7 @@ pub struct WalFile {
 
 impl WalFile {
     pub async fn load_wal_file_header(file: &mut File) -> Result<WalHeader> {
-        let mut header: WalHeader = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
+        let mut header: WalHeader = unsafe { std::mem::zeroed() };
         let data = unsafe {
             slice::from_raw_parts_mut(
                 &mut header as *mut _ as *mut u8,
@@ -110,7 +110,7 @@ impl WalFile {
                 std::mem::size_of::<WalFooter>(),
             )
         };
-        info!("footer length: {}", data.len());
+        debug!("footer length: {}", data.len());
 
         let footer_offset = file.metadata().await?.len() - 4096;
 
@@ -166,18 +166,16 @@ impl WalFile {
     pub async fn load_unsealed_wal_file(mut file: File, path: impl AsRef<Path>) -> Result<WalFile> {
         info!("load_unsealed_wal_file at {:?}", path.as_ref());
         let header = Self::load_wal_file_header(&mut file).await?;
-
-        let mut metas = vec![];
+        info!("wal file header: {header:?}");
         let mut wal_entry_offset = header.first_entry_offset;
 
+        let mut metas = vec![];
+        let (mut current_entry_offset, mut current_entry_index) = (0, 0);
         loop {
-            debug!("wal_entry_offset: {}", wal_entry_offset);
-            file.seek(SeekFrom::Start(wal_entry_offset))
-                .await
-                .map_err(|_| anyhow!(WalError::FailedToSeek))?;
+            info!("wal_entry_offset: {}", wal_entry_offset);
+            file.seek(SeekFrom::Start(wal_entry_offset)).await?;
 
-            let mut entry_header: WalEntryHeader =
-                unsafe { std::mem::MaybeUninit::uninit().assume_init() };
+            let mut entry_header: WalEntryHeader = unsafe { std::mem::zeroed() };
             let data = unsafe {
                 slice::from_raw_parts_mut(
                     &mut entry_header as *mut _ as *mut u8,
@@ -185,23 +183,26 @@ impl WalFile {
                 )
             };
 
-            match file.read(data).await {
-                Err(e) => {
-                    error!(
-                        "failed to read wal entry header at {:?}, err: {:?}",
-                        wal_entry_offset, e
-                    );
-                    bail!(WalError::FailedToRead);
-                }
-                Ok(v) => {
-                    let a = entry_header.offset;
-                    let b = entry_header.index;
-                    debug!("read meta header: offset: {}, version: {}", a, b);
-                    if v == 0 {
-                        break;
-                    }
-                }
+            let sz = file.read(data).await.inspect_err(|e| {
+                error!("failed to read wal entry header at {wal_entry_offset:?}, err: {e}")
+            })?;
+            info!("sz: {sz}");
+
+            if sz == 0 {
+                break;
             }
+            if entry_header.offset <= current_entry_offset
+                || entry_header.index <= current_entry_index
+            {
+                break;
+            } else {
+                (current_entry_offset, current_entry_index) =
+                    (entry_header.offset, entry_header.index);
+            }
+            info!(
+                "read entry header: offset: {}, index: {}",
+                current_entry_offset, current_entry_index
+            );
 
             metas.push(WalEntryMeta {
                 index: entry_header.index,
@@ -264,7 +265,7 @@ impl WalFile {
             bail!(WalError::WalFileFull);
         }
 
-        info!("wal file next_version: {}", self.next_index);
+        info!("wal file next_version before: {}", self.next_index);
         let meta = WalEntryMeta {
             entry_offset: self.next_entry_offset,
             entry_length: ent.encoded_len() as u64,
@@ -278,12 +279,15 @@ impl WalFile {
             index: self.next_index,
             checksum: 0,
             prev_entry_offset: 1,
+
             padding_: [0; 80],
         };
 
-        let a = entry_header.offset;
-        let b = entry_header.index;
-        info!("append meta header: offset: {}, version: {}", a, b);
+        {
+            let a = entry_header.offset;
+            let b = entry_header.index;
+            info!("append meta header: offset: {}, index: {}", a, b);
+        }
 
         let entry_header_data: &[u8] = unsafe {
             slice::from_raw_parts(
@@ -292,27 +296,32 @@ impl WalFile {
             )
         };
 
-        let mut entry_buf = vec![];
-        // TODO: use writev to eliminate copy
-        entry_buf.append(&mut entry_header_data.to_owned());
+        let entry_buf = {
+            let mut buf = vec![];
+            buf.append(&mut entry_header_data.to_owned());
 
-        let mut buf = Vec::new();
-        ent.encode(&mut buf).unwrap();
-        entry_buf.append(&mut buf);
+            let mut buf2 = vec![];
+            ent.encode(&mut buf2).unwrap();
+            buf.append(&mut buf2);
 
+            buf
+        };
+
+        // TODO: use pwritev to eliminate copy and seek
         self.next_entry_offset += entry_buf.len() as u64;
-        if let Err(e) = self.file.seek(SeekFrom::Start(meta.entry_offset)).await {
-            error!("file seek to failed, err: {e}");
-            bail!(WalError::FailedToSeek);
-        }
+        self.file
+            .seek(SeekFrom::Start(meta.entry_offset))
+            .await
+            .inspect_err(|e| error!("file seek to failed, err: {e}"))?;
 
-        if let Err(e) = self.file.write(&entry_buf).await {
-            error!("file write failed, err: {e}");
-            bail!(WalError::FailedToWrite);
-        }
+        self.file
+            .write(&entry_buf)
+            .await
+            .inspect_err(|e| error!("file write failed, err: {e}"))?;
+
         self.wal_entry_metas.push(meta);
         self.next_index += 1;
-        info!("wal file next_version 2: {}", self.next_index);
+        info!("wal file next_version after: {}", self.next_index);
 
         Ok(())
     }

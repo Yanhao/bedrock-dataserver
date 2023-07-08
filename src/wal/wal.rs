@@ -171,7 +171,7 @@ impl WalTrait for Wal {
                 file.first_version(),
                 file.next_version()
             );
-            if file.next_version() < lo {
+            if file.next_version() <= lo {
                 continue;
             }
 
