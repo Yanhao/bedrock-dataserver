@@ -87,9 +87,9 @@ impl SledStore {
         let iter = self.db.range(start_key..end_key);
 
         let mut kvs = vec![];
-        let mut count = 0;
-        for kv in iter {
-            if count >= limit {
+
+        for (count, kv) in iter.enumerate() {
+            if count >= limit as usize {
                 break;
             }
 
@@ -99,8 +99,6 @@ impl SledStore {
                 key: kv.0.as_ref().to_owned(),
                 value: kv.1.as_ref().to_owned(),
             });
-
-            count += 1;
         }
 
         Ok(kvs)

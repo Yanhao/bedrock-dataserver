@@ -59,8 +59,8 @@ pub async fn start_background_tasks() {
     //     info!("stop raft peer server");
     // });
 
-    heartbeat::HEART_BEATER.write().start().await;
-    sync_shard::SHARD_SYNCER.write().start().await;
+    heartbeat::HEART_BEATER.write().start();
+    sync_shard::SHARD_SYNCER.write().start();
 
     info!("background tasks start finished");
 }

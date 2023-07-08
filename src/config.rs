@@ -15,15 +15,12 @@ pub const CONFIG_DIR: &str = "/etc/bedrock-dataserver";
 static HOST_IP: Lazy<IpAddr> = Lazy::new(|| get_if_addrs().unwrap()[0].addr.ip());
 pub static CONFIG: Lazy<parking_lot::RwLock<Configuration>> = Lazy::new(Default::default);
 
-#[derive(Deserialize, Debug, Clone)]
-#[derive(Default)]
+#[derive(Deserialize, Debug, Clone, Default)]
 pub enum DiskType {
     SSD,
     #[default]
     HDD,
 }
-
-
 
 #[derive(Deserialize, Debug, Clone, Default)]
 pub struct Configuration {

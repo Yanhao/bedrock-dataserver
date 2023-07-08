@@ -11,7 +11,6 @@ use tokio::signal;
 use tonic::transport::Server as GrpcServer;
 use tracing::{debug, error, info};
 
-
 use idl_gen::service_pb::data_service_server::DataServiceServer;
 
 use dataserver::config::{config_mod_init, CONFIG, CONFIG_DIR};

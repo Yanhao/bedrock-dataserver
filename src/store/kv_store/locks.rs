@@ -60,6 +60,12 @@ pub struct RangeLock {
     data: BTreeSet<LockItem>,
 }
 
+impl Default for RangeLock {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RangeLock {
     pub fn new() -> RangeLock {
         RangeLock {

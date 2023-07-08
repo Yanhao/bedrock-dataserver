@@ -10,6 +10,12 @@ pub struct Leader {
     stop_ch: Option<mpsc::Sender<()>>,
 }
 
+impl Default for Leader {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Leader {
     pub fn new() -> Self {
         Self { stop_ch: None }

@@ -14,6 +14,12 @@ pub struct Connections {
     conns: RwLock<HashMap<String, data_service_client::DataServiceClient<Channel>>>,
 }
 
+impl Default for Connections {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Connections {
     pub fn new() -> Self {
         Connections {

@@ -24,7 +24,7 @@ impl Wal {
     fn wal_file_suffix(path: impl AsRef<Path>) -> u64 {
         let path = path.as_ref().as_os_str().to_str().unwrap();
         let suffix_str = path.split('.').last().unwrap();
-        
+
         suffix_str.parse().unwrap()
     }
 

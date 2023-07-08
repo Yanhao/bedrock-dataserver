@@ -430,7 +430,8 @@ impl Shard {
                 .entries(next_index, en.index, 1024)
                 .await;
 
-            if let Err(_) = entries_res {
+            if let Err(e) = entries_res {
+                error!("call replog.entries failed, err: {e}");
                 next_index = Self::install_snapshot_to(self.clone(), client.clone(), addr)
                     .await
                     .map_err(|_| ShardError::FailedToAppendLog)?;

@@ -15,7 +15,7 @@ pub struct ShardSyncer {
 }
 
 impl ShardSyncer {
-    pub async fn start(&mut self) {
+    pub fn start(&mut self) {
         let (tx, mut rx) = mpsc::channel(1);
         self.stop_ch.replace(tx);
 

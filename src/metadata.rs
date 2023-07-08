@@ -2,7 +2,7 @@ use std::fs::{read_to_string, OpenOptions};
 use std::io::Write;
 use std::path::Path;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, ensure, Result};
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use prost::Message;
@@ -68,7 +68,9 @@ impl MetaData {
             .append(true)
             .open(METADATA_PATH)?;
 
-        mfile.write(json_raw.as_bytes()).unwrap();
+        let data = json_raw.as_bytes();
+        let sz = mfile.write(data).unwrap();
+        ensure!(sz == data.len(), "write partial data");
 
         self.data = json_meta;
 
@@ -84,11 +86,7 @@ impl MetaData {
 impl Meta<ShardMetaIter> for MetaData {
     fn is_shard_exists(&self, shard_id: u64) -> Result<bool> {
         let key = Self::shard_key(shard_id);
-        Ok(if let None = self.meta_db.get(key)? {
-            false
-        } else {
-            true
-        })
+        Ok(self.meta_db.get(key)?.is_some())
     }
 
     fn add_shard(&self, shard_id: u64, meta: ShardMeta) -> Result<()> {

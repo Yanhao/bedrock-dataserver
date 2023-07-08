@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use anyhow::{bail, Result};
 use async_trait::async_trait;
 use prost::Message;
@@ -101,15 +103,19 @@ impl WalTrait for MemLog {
 
         let offset = (ents[0].index - self.ents[0].index) as usize;
 
-        if self.ents.len() > offset {
-            self.ents = self.ents[..offset].to_owned();
-            self.ents.append(&mut new_ents);
-        } else if self.ents.len() == offset {
-            self.ents.append(&mut new_ents);
-        } else {
-            warn!("");
-            self.ents.append(&mut new_ents);
-        }
+        match self.ents.len().cmp(&offset) {
+            Ordering::Greater => {
+                self.ents = self.ents[..offset].to_owned();
+                self.ents.append(&mut new_ents);
+            }
+            Ordering::Equal => {
+                self.ents.append(&mut new_ents);
+            }
+            Ordering::Less => {
+                warn!("");
+                self.ents.append(&mut new_ents);
+            }
+        };
 
         Ok(self.next_index() - 1)
     }

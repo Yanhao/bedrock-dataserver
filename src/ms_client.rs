@@ -79,7 +79,7 @@ impl MsClient {
 
     fn get_ms_addr(&self) -> String {
         let meta = METADATA.read().get_meta();
-        
+
         meta.metaserver_leader
     }
 

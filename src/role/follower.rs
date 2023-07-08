@@ -5,6 +5,12 @@ pub struct Follower {
     stop_ch: Option<mpsc::Sender<()>>,
 }
 
+impl Default for Follower {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Follower {
     pub fn new() -> Self {
         Self { stop_ch: None }

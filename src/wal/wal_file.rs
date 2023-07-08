@@ -2,7 +2,7 @@ use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
 use std::slice;
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, ensure, Result};
 use derivative::Derivative;
 use prost::Message;
 use tokio::fs::{File, OpenOptions};
@@ -115,7 +115,8 @@ impl WalFile {
         let footer_offset = file.metadata().await?.len() - 4096;
 
         file.seek(SeekFrom::Start(footer_offset)).await?;
-        file.read(data).await?;
+        let sz = file.read(data).await?;
+        ensure!(sz == data.len(), "read partial data");
 
         info!("footer: {:?}", footer);
 
@@ -454,7 +455,7 @@ impl WalFile {
     pub fn suffix(&self) -> u64 {
         let path = self.path.as_os_str().to_str().unwrap();
         let suffix_str = path.split('.').last().unwrap();
-        
+
         suffix_str.parse().unwrap()
     }
 
@@ -486,7 +487,8 @@ impl WalFile {
             self.file.seek(SeekFrom::Start(m.entry_offset)).await?;
 
             let mut buf = vec![0; std::mem::size_of::<WalEntryHeader>() + m.entry_length as usize];
-            self.file.read(&mut buf).await?;
+            let sz = self.file.read(&mut buf).await?;
+            ensure!(sz == buf.len(), "read partial data");
 
             info!("buf len: {}", buf.len());
 

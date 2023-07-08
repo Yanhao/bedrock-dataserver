@@ -285,7 +285,7 @@ impl DataService for RealDataServer {
         shard.set_installing_snapshot(true);
 
         while let Some(result) = in_stream.next().await {
-            if let Err(_) = result {
+            if result.is_err() {
                 break;
             }
             let piece = result.unwrap();
@@ -392,7 +392,7 @@ impl DataService for RealDataServer {
             let shard = self.get_shard(first.shard_id_to).await?;
 
             while let Some(result) = in_stream.next().await {
-                if let Err(_) = result {
+                if result.is_err() {
                     break;
                 }
 
