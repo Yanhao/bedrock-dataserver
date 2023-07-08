@@ -188,21 +188,22 @@ impl WalFile {
             })?;
             info!("sz: {sz}");
 
+            {
+                let (a, b) = (entry_header.offset, entry_header.index);
+                info!("read entry header: offset: {}, index: {}", a, b);
+            }
+
             if sz == 0 {
                 break;
             }
             if entry_header.offset <= current_entry_offset
-                || entry_header.index <= current_entry_index
+                || entry_header.index < current_entry_index
             {
                 break;
             } else {
                 (current_entry_offset, current_entry_index) =
                     (entry_header.offset, entry_header.index);
             }
-            info!(
-                "read entry header: offset: {}, index: {}",
-                current_entry_offset, current_entry_index
-            );
 
             metas.push(WalEntryMeta {
                 index: entry_header.index,
