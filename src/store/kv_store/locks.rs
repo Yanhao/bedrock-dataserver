@@ -102,13 +102,6 @@ impl RangeLock {
 
         ret
     }
-
-    fn debug_info(&self) {
-        println!("debug info:");
-        for i in self.data.iter() {
-            print!("Item: start {}, end: {}\n", i.start, i.end);
-        }
-    }
 }
 
 impl fmt::Display for RangeLock {

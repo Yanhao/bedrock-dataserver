@@ -452,7 +452,7 @@ impl DataService for RealDataServer {
 
     async fn start_tx(
         &self,
-        req: Request<StartTxRequest>,
+        _req: Request<StartTxRequest>,
     ) -> Result<Response<StartTxResponse>, Status> {
         todo!()
     }
@@ -478,28 +478,28 @@ impl DataService for RealDataServer {
 
     async fn lock_range(
         &self,
-        req: Request<LockRangeRequest>,
+        _req: Request<LockRangeRequest>,
     ) -> Result<Response<LockRangeResponse>, Status> {
         todo!()
     }
 
     async fn prepare_tx(
         &self,
-        req: Request<PrepareTxRequest>,
+        _req: Request<PrepareTxRequest>,
     ) -> Result<Response<PrepareTxResponse>, Status> {
         todo!()
     }
 
     async fn commit_tx(
         &self,
-        req: Request<CommitTxRequest>,
+        _req: Request<CommitTxRequest>,
     ) -> Result<Response<CommitTxResponse>, Status> {
         todo!()
     }
 
     async fn cancel_tx(
         &self,
-        req: Request<CancelTxRequest>,
+        _req: Request<CancelTxRequest>,
     ) -> Result<Response<CancelTxResponse>, Status> {
         todo!()
     }
