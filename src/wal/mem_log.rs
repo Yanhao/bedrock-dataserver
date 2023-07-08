@@ -28,10 +28,12 @@ pub struct MemLog {
 }
 
 impl MemLog {
+    #[allow(unused)]
     pub fn new() -> Self {
         MemLog { ents: Vec::new() }
     }
 
+    #[allow(unused)]
     pub fn clear(&mut self) {
         self.ents = vec![];
     }
@@ -79,7 +81,7 @@ impl WalTrait for MemLog {
         Ok(Self::limit_size(ret.to_owned(), max_size))
     }
 
-    async fn append(&mut self, ents: Vec<Entry>, discard: bool) -> Result<u64> {
+    async fn append(&mut self, ents: Vec<Entry>, _discard: bool) -> Result<u64> {
         if ents.len() == 0 {
             bail!(MemLogError::BaseError);
         }

@@ -21,7 +21,7 @@ use idl_gen::service_pb::{
     CreateShardRequest, ShardAppendLogRequest, ShardInstallSnapshotRequest, ShardMeta,
 };
 
-use crate::config::get_self_socket_addr;
+use crate::config::CONFIG;
 use crate::ds_client::CONNECTIONS;
 use crate::role::{Follower, Leader, Role};
 use crate::shard::ShardError;
@@ -96,7 +96,7 @@ impl Shard {
         let sled_db = SledStore::create(shard_id).await.unwrap();
         let meta = ShardMeta {
             shard_id,
-            is_leader: get_self_socket_addr().to_string() == req.get_ref().leader,
+            is_leader: CONFIG.read().get_self_socket_addr().to_string() == req.get_ref().leader,
             create_ts: req.get_ref().create_ts.to_owned().unwrap().into(),
             leader: req.get_ref().leader.clone(),
             leader_change_ts: req.get_ref().leader_change_ts.to_owned().unwrap().into(),

@@ -445,7 +445,7 @@ impl DataService for RealDataServer {
         let shard_id_a = req.get_ref().shard_id_a;
         let shard_id_b = req.get_ref().shard_id_b;
 
-        SHARD_MANAGER.merge_shard(shard_id_a, shard_id_b).await;
+        let _ = SHARD_MANAGER.merge_shard(shard_id_a, shard_id_b).await;
 
         Ok(Response::new(MergeShardResponse {}))
     }
@@ -466,7 +466,7 @@ impl DataService for RealDataServer {
         }
 
         let shard_id = req.get_ref().shard_id;
-        let shard = self.get_shard(shard_id).await?;
+        let _shard = self.get_shard(shard_id).await?;
 
         // let res = shard.read().await.get(req.get_ref().key.as_ref());
         // if let Ok(_) = res {

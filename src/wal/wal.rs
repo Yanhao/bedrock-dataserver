@@ -142,7 +142,10 @@ impl WalTrait for Wal {
         hi: u64, /* lo..=hi */
         _max_size: u64,
     ) -> Result<Vec<Entry>> {
-        info!("wal entries: lo: {lo}, hi: {hi}");
+        info!(
+            "wal entries: lo: {lo}, hi: {hi}, shard_id: {}",
+            self.shard_id
+        );
 
         if hi - lo >= MAX_ENTRY_COUNT {
             bail!(WalError::TooManyEntries);

@@ -1,11 +1,9 @@
-use std::fs::read_to_string;
-use std::mem::MaybeUninit;
 use std::net::SocketAddr;
+use std::{fs::read_to_string, net::IpAddr};
 
 use anyhow::{anyhow, Result};
 use get_if_addrs::get_if_addrs;
 use once_cell::sync::Lazy;
-use parking_lot::RwLock;
 use serde::{self, Deserialize};
 use tracing::{debug, error, info};
 
@@ -14,13 +12,8 @@ use crate::error::DataServerError;
 // the location of dataserver configuration directory.
 pub const CONFIG_DIR: &str = "/etc/bedrock-dataserver";
 
-pub static CONFIG: Lazy<RwLock<Configuration>> = Lazy::new(|| Default::default());
-pub static SELF_ADDR: Lazy<RwLock<SocketAddr>> =
-    Lazy::new(|| RwLock::new(unsafe { MaybeUninit::uninit().assume_init() }));
-
-pub fn get_self_socket_addr() -> SocketAddr {
-    *SELF_ADDR.read()
-}
+static HOST_IP: Lazy<IpAddr> = Lazy::new(|| get_if_addrs().unwrap()[0].addr.ip());
+pub static CONFIG: Lazy<parking_lot::RwLock<Configuration>> = Lazy::new(|| Default::default());
 
 #[derive(Deserialize, Debug, Clone)]
 pub enum DiskType {
@@ -68,6 +61,12 @@ impl Configuration {
         debug!("configuration: {:?}", ret);
         Ok(ret)
     }
+
+    pub fn get_self_socket_addr(&self) -> SocketAddr {
+        let addr: SocketAddr = self.rpc_server_addr.clone().unwrap().parse().unwrap();
+
+        SocketAddr::new(*HOST_IP, addr.port())
+    }
 }
 
 fn validate_configuration(_config: &Configuration) -> Result<()> {
@@ -75,17 +74,11 @@ fn validate_configuration(_config: &Configuration) -> Result<()> {
 }
 
 pub fn config_mod_init(config_file: &str) -> Result<()> {
-    let conf = Configuration::parse_config_file(config_file).map_err(|e| {
-        error!("failed to initialize config module");
-        e
-    })?;
+    let conf = Configuration::parse_config_file(config_file)
+        .inspect_err(|e| error!("failed to initialize config module, err: {e}"))?;
 
     validate_configuration(&conf)?;
 
-    let addr: SocketAddr = conf.rpc_server_addr.clone().unwrap().parse().unwrap();
-    let ip = get_if_addrs().unwrap()[0].addr.ip();
-
-    *SELF_ADDR.write() = SocketAddr::new(ip, addr.port());
     *CONFIG.write() = conf;
 
     info!("successfully initialized config module");

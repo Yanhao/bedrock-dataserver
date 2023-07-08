@@ -3,7 +3,6 @@ use std::vec::Vec;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use num_bigint::BigUint;
 
 use super::{LockItem, RangeLock, SledStore};
 

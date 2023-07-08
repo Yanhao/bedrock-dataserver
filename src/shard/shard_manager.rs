@@ -7,7 +7,7 @@ use once_cell::sync::Lazy;
 use super::Shard;
 use crate::wal::Wal;
 
-const DEFAULT_SHARD_CAPACITY: u64 = 10240;
+const _DEFAULT_SHARD_CAPACITY: u64 = 10240;
 
 pub static SHARD_MANAGER: Lazy<ShardManager> = Lazy::new(|| ShardManager::new());
 

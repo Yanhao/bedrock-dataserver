@@ -7,7 +7,7 @@ use idl_gen::metaserver_pb::sync_shard_in_data_server_request::SyncShardInfo;
 use idl_gen::metaserver_pb::{meta_service_client, HeartBeatRequest, SyncShardInDataServerRequest};
 use idl_gen::service_pb::ShardMeta;
 
-use crate::config::get_self_socket_addr;
+use crate::config::CONFIG;
 use crate::metadata::ShardMetaIter;
 use crate::metadata::METADATA;
 
@@ -45,7 +45,7 @@ impl Iterator for SyncShardIter<ShardMetaIter> {
         }
 
         let mut ret = SyncShardInDataServerRequest {
-            dataserver_addr: get_self_socket_addr().to_string(),
+            dataserver_addr: CONFIG.read().get_self_socket_addr().to_string(),
             sync_ts: Some(self.sync_ts.clone()),
             shards: vec![],
             is_last_piece: if shard == None {
@@ -90,7 +90,7 @@ impl MsClient {
         let mut client = meta_service_client::MetaServiceClient::connect(addr.clone()).await?;
 
         let req = tonic::Request::new(HeartBeatRequest {
-            addr: get_self_socket_addr().to_string(),
+            addr: CONFIG.read().get_self_socket_addr().to_string(),
             restarting: false,
         });
 

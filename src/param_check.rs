@@ -59,7 +59,7 @@ pub fn shard_install_snapshot_param_check(_req: &ShardInstallSnapshotRequest) ->
 
 pub fn transfer_shard_leader_param_check(req: &TransferShardLeaderRequest) -> bool {
     for addr in req.replicates.iter() {
-        if let Err(e) = addr.parse::<SocketAddr>() {
+        if let Err(_) = addr.parse::<SocketAddr>() {
             return false;
         }
     }
