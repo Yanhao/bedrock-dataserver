@@ -13,7 +13,7 @@ use parking_lot;
 use prost::Message;
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tonic::Request;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use idl_gen::replog_pb::Entry;
 use idl_gen::service_pb::{
@@ -157,7 +157,7 @@ impl Shard {
             .await
             .unwrap();
 
-        let wal = Wal::load_wal_by_shard_id(shard_id).await.unwrap();
+        let wal = Wal::load_wal_by_shard_id(shard_id).await?;
 
         Ok(Self::new(sled_db, meta, wal))
     }
@@ -168,7 +168,7 @@ impl Shard {
         let meta_key = SHARD_META_KEY.as_bytes();
         let raw_meta = sled_db.kv_get(meta_key).await.unwrap();
         let meta = ShardMeta::decode(raw_meta.as_slice()).unwrap();
-        let wal = Wal::load_wal_by_shard_id(shard_id).await.unwrap();
+        let wal = Wal::load_wal_by_shard_id(shard_id).await?;
         info!("shard meta: {:?}", meta);
 
         Ok(Self::new(sled_db, meta, wal))
@@ -436,12 +436,13 @@ impl Shard {
                 .await;
 
             if let Err(_) = entries_res {
-                next_index = match Self::install_snapshot_to(self.clone(), client.clone()).await {
-                    Err(_) => {
-                        return Err(ShardError::FailedToAppendLog);
-                    }
-                    Ok(v) => v,
-                };
+                next_index =
+                    match Self::install_snapshot_to(self.clone(), client.clone(), &addr).await {
+                        Err(_) => {
+                            return Err(ShardError::FailedToAppendLog);
+                        }
+                        Ok(v) => v,
+                    };
 
                 continue;
             }
@@ -482,6 +483,7 @@ impl Shard {
     async fn install_snapshot_to(
         self: Arc<Shard>,
         mut client: data_service_client::DataServiceClient<tonic::transport::Channel>,
+        addr: &str,
     ) -> Result<u64 /*last_wal_index */> {
         let snap = self.kv_store.create_snapshot_iter().await?;
 
@@ -502,7 +504,8 @@ impl Shard {
 
         client
             .shard_install_snapshot(Request::new(stream::iter(req_stream)))
-            .await?;
+            .await
+            .inspect_err(|e| error!("install snapshot to {addr} failed, err: {e}",))?;
         // ref: https://github.com/hyperium/tonic/blob/master/examples/routeguide-tutorial.md
 
         return Ok(next_wal_index);
@@ -556,6 +559,16 @@ impl Shard {
         let mut role = Follower::new();
         role.start().await?;
         *self.role.write().await = Role::Follower(role);
+
+        Ok(())
+    }
+
+    pub async fn start_role(self: Arc<Self>) -> Result<()> {
+        if self.is_leader() {
+            self.switch_role_to_leader().await?;
+        } else {
+            self.switch_role_to_follower().await?;
+        }
 
         Ok(())
     }

@@ -25,7 +25,7 @@ impl ShardManager {
     async fn load_shard(&self, shard_id: u64) -> Result<Arc<Shard>> {
         let shard = Arc::new(Shard::load_shard(shard_id).await.unwrap());
 
-        shard.clone().switch_role_to_leader().await.unwrap();
+        shard.clone().start_role().await?;
 
         self.shards.write().insert(shard_id, shard.clone());
 
@@ -89,7 +89,7 @@ impl ShardManager {
             .await
             .unwrap();
 
-        new_shard.switch_role_to_leader().await?;
+        new_shard.start_role().await?;
 
         Ok(())
     }
