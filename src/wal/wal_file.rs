@@ -331,6 +331,7 @@ impl WalFile {
             .await
         {
             Err(e) => {
+                error!("create wal file failed, error: {e}");
                 bail!(WalError::FailedToCreateFile)
             }
             Ok(v) => v,
@@ -387,7 +388,7 @@ impl WalFile {
             .map_err(|_| anyhow!(WalError::FailedToSeek))?;
 
         if let Err(e) = self.file.write(metas_data).await {
-            error!("failed to write wal entry index");
+            error!("failed to write wal entry index, error: {e}");
             bail!(WalError::FailedToWrite);
         }
 

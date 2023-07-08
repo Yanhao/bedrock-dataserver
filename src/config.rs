@@ -70,7 +70,7 @@ impl Configuration {
     }
 }
 
-fn validate_configuration(config: &Configuration) -> Result<()> {
+fn validate_configuration(_config: &Configuration) -> Result<()> {
     Ok(())
 }
 

@@ -2,7 +2,7 @@ use anyhow::Result;
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use tokio::{select, sync::mpsc};
-use tracing::info;
+use tracing::{error, info};
 
 use crate::metadata::{Meta, METADATA};
 use crate::ms_client::MS_CLIENT;
@@ -30,7 +30,9 @@ impl ShardSyncer {
                     _ = ticker.tick() => {
                         let shards = METADATA.read().shard_iter();
 
-                        MS_CLIENT.sync_shards_to_ms(shards).await;
+                        if let Err(e) = MS_CLIENT.sync_shards_to_ms(shards).await {
+                            error!("sync shard to metaserver failed, error: {e}");
+                        }
                     }
                 }
             }

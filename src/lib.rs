@@ -4,7 +4,6 @@
 
 use tracing::info;
 
-// mod chunk;
 pub mod config;
 pub mod ds_client;
 pub mod error;
@@ -22,7 +21,7 @@ pub mod sync_shard;
 pub mod wal;
 
 pub async fn start_background_tasks() {
-    info!("start background tasks ...");
+    info!("startting background tasks ...");
 
     // if let Err(e) = setup_pid_file(&work_dir) {
     //     error!("failed to setup pid file, err: {}", e);

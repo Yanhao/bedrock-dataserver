@@ -32,20 +32,20 @@ impl ShardManager {
         Ok(shard)
     }
 
-    pub async fn get_shard(&self, id: u64) -> Result<Arc<Shard>> {
-        if let Some(shard) = self.shards.read().get(&id) {
+    pub async fn get_shard(&self, shard_id: u64) -> Result<Arc<Shard>> {
+        if let Some(shard) = self.shards.read().get(&shard_id) {
             return Ok(shard.clone());
         }
 
-        self.load_shard(id).await
+        self.load_shard(shard_id).await
     }
 
-    pub async fn remove_shard(&self, id: u64) -> Result<()> {
-        if !self.shards.read().contains_key(&id) {
+    pub async fn remove_shard(&self, shard_id: u64) -> Result<()> {
+        if !self.shards.read().contains_key(&shard_id) {
             return Ok(());
         }
 
-        self.shards.write().remove(&id);
+        self.shards.write().remove(&shard_id);
 
         Ok(())
     }
@@ -60,7 +60,7 @@ impl ShardManager {
         let start_key = shard.middle_key();
         let end_key = shard.max_key();
 
-        let mut new_shard = Shard::create_shard_for_split(
+        let new_shard = Shard::create_shard_for_split(
             new_shard_id,
             leader,
             replicates,

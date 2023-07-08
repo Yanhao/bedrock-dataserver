@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use tokio::sync::mpsc::Receiver;
-use tokio::{select, sync::mpsc};
+use tokio::sync::mpsc::{self, Receiver};
 use tracing::{error, info};
 
 use crate::shard::{EntryWithNotifierSender, Shard, ShardError};

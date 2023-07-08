@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 use std::ops::Range;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time;
 use std::vec::Vec;

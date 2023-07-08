@@ -2,7 +2,7 @@ use anyhow::Result;
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use tokio::{select, sync::mpsc};
-use tracing::{info, warn};
+use tracing::{error, info};
 
 use crate::ms_client::MS_CLIENT;
 
@@ -27,7 +27,9 @@ impl HeartBeater {
                         break;
                     }
                     _ = ticker.tick() => {
-                        MS_CLIENT.heartbeat(false).await;
+                        if let Err(e) = MS_CLIENT.heartbeat(false).await {
+                            error!("heartbeat to metaserver failed, error: {e}");
+                        }
                     }
                 }
             }

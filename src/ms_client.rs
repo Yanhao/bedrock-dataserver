@@ -83,7 +83,7 @@ impl MsClient {
         addr
     }
 
-    pub async fn heartbeat(&self, restarting: bool) -> Result<()> {
+    pub async fn heartbeat(&self, _restarting: bool) -> Result<()> {
         let addr = self.get_ms_addr();
 
         info!("heartbeat to metaserver ... metaserver_addr: {}", addr);
@@ -94,14 +94,8 @@ impl MsClient {
             restarting: false,
         });
 
-        match client.heart_beat(req).await {
-            Err(e) => {
-                warn!("failed to heart beat to {}, err: {:?}", addr, e);
-            }
-            Ok(resp) => {
-                debug!("heartbeat response: {:?}", resp);
-            }
-        }
+        let resp = client.heart_beat(req).await?;
+        debug!("heartbeat response: {:?}", resp);
 
         Ok(())
     }
@@ -109,19 +103,18 @@ impl MsClient {
     pub async fn sync_shards_to_ms(&self, shards: ShardMetaIter) -> Result<()> {
         let addr = self.get_ms_addr();
 
-        info!("sync shards to metaserver");
+        info!("sync shards to metaserver ...");
         let mut client = meta_service_client::MetaServiceClient::connect(addr.clone()).await?;
 
         let req = tonic::Request::new(stream::iter(SyncShardIter::new(shards.into_iter())));
 
-        match client.sync_shard_in_data_server(req).await {
-            Err(e) => {
-                warn!("failed to sync shard to {}, err: {:?}", addr, e);
-            }
-            Ok(resp) => {
-                info!("sync shard response: {:?}", resp);
-            }
-        }
+        let resp = client
+            .sync_shard_in_data_server(req)
+            .await
+            .inspect_err(|e| warn!("failed to sync shard to {}, err: {:?}", addr, e))?;
+
+        debug!("sync shards to metaserver finished");
+        debug!("sync shard response: {:?}", resp);
 
         Ok(())
     }

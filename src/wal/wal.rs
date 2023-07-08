@@ -159,7 +159,7 @@ impl WalTrait for Wal {
         &mut self,
         mut lo: u64,
         hi: u64, /* lo..=hi */
-        max_size: u64,
+        _max_size: u64,
     ) -> Result<Vec<Entry>> {
         info!("wal entries: lo: {lo}, hi: {hi}");
 
