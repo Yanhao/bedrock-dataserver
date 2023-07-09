@@ -1,7 +1,7 @@
 use std::collections::btree_map::BTreeMap;
 use std::vec::Vec;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 
 use super::{LockItem, RangeLock, SledStore};
@@ -34,6 +34,7 @@ pub trait MvKvLite {
     async fn kv_abort_tx(&mut self, key: &[u8]) -> Result<()>;
 }
 
+#[allow(unused)]
 pub struct MvKvImpl {
     kv_store: SledStore,
     write_locks: RangeLock,
@@ -52,7 +53,7 @@ impl MvKvLite for MvKvImpl {
         // let key = key + '@' + BigUint::from(version).to_bytes_be();
         // let kvs = self.kv_store.kv_scan(start_key, end_key, 1).await?;
         // Ok(kvs[0].value)
-        todo!()
+        Err(anyhow!(""))
     }
 
     fn kv_range_by_version(&mut self, _version: u64, _start_key: &[u8], _end_key: &[u8]) {

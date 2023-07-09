@@ -20,7 +20,7 @@ impl ShardSyncer {
         self.stop_ch.replace(tx);
 
         tokio::spawn(async move {
-            let mut ticker = tokio::time::interval(tokio::time::Duration::from_secs(30 * 60));
+            let mut ticker = tokio::time::interval(tokio::time::Duration::from_secs(60));
 
             loop {
                 select! {

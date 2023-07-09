@@ -1,5 +1,6 @@
 use thiserror::Error;
 
+#[allow(clippy::module_inception)]
 mod shard;
 mod shard_manager;
 

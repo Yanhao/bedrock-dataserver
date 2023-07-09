@@ -454,7 +454,7 @@ impl DataService for RealDataServer {
         &self,
         _req: Request<StartTxRequest>,
     ) -> Result<Response<StartTxResponse>, Status> {
-        todo!()
+        Err(Status::unimplemented(""))
     }
 
     async fn lock_record(
@@ -480,28 +480,28 @@ impl DataService for RealDataServer {
         &self,
         _req: Request<LockRangeRequest>,
     ) -> Result<Response<LockRangeResponse>, Status> {
-        todo!()
+        Err(Status::unimplemented(""))
     }
 
     async fn prepare_tx(
         &self,
         _req: Request<PrepareTxRequest>,
     ) -> Result<Response<PrepareTxResponse>, Status> {
-        todo!()
+        Err(Status::unimplemented(""))
     }
 
     async fn commit_tx(
         &self,
         _req: Request<CommitTxRequest>,
     ) -> Result<Response<CommitTxResponse>, Status> {
-        todo!()
+        Err(Status::unimplemented(""))
     }
 
     async fn cancel_tx(
         &self,
         _req: Request<CancelTxRequest>,
     ) -> Result<Response<CancelTxResponse>, Status> {
-        todo!()
+        Err(Status::unimplemented(""))
     }
 }
 

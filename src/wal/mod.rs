@@ -5,6 +5,7 @@ use thiserror::Error;
 use idl_gen::replog_pb::Entry;
 
 mod mem_log;
+#[allow(clippy::module_inception)]
 mod wal;
 mod wal_file;
 
