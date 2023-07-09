@@ -8,8 +8,8 @@ use idl_gen::metaserver_pb::{meta_service_client, HeartBeatRequest, SyncShardInD
 use idl_gen::service_pb::ShardMeta;
 
 use crate::config::CONFIG;
-use crate::metadata::ShardMetaIter;
 use crate::metadata::METADATA;
+use crate::metadata::{Meta, ShardMetaIter};
 
 pub static MS_CLIENT: Lazy<MsClient> = Lazy::new(MsClient::new);
 
@@ -39,10 +39,11 @@ impl Iterator for SyncShardIter<ShardMetaIter> {
     type Item = SyncShardInDataServerRequest;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let shard = self.shards.next();
         if self.last {
             return None;
         }
+
+        let shard = self.shards.next();
 
         let mut ret = SyncShardInDataServerRequest {
             dataserver_addr: CONFIG.read().get_self_socket_addr().to_string(),
@@ -100,7 +101,8 @@ impl MsClient {
         Ok(())
     }
 
-    pub async fn sync_shards_to_ms(&self, shards: ShardMetaIter) -> Result<()> {
+    pub async fn sync_shards_to_ms(&self) -> Result<()> {
+        let shards = METADATA.read().shard_iter();
         let addr = self.get_ms_addr();
 
         info!("sync shards to metaserver ...");
@@ -113,8 +115,8 @@ impl MsClient {
             .await
             .inspect_err(|e| warn!("failed to sync shard to {}, err: {:?}", addr, e))?;
 
-        debug!("sync shards to metaserver finished");
         debug!("sync shard response: {:?}", resp);
+        info!("sync shards to metaserver finished");
 
         Ok(())
     }

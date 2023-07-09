@@ -7,7 +7,7 @@ use once_cell::sync::Lazy;
 use prost::Message;
 use serde::{Deserialize, Serialize};
 use sled;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 use idl_gen::service_pb::ShardMeta;
 
@@ -137,6 +137,7 @@ impl Iterator for ShardMetaIter {
             }
             Ok(v) => {
                 let meta = ShardMeta::decode(v.1.as_ref()).unwrap();
+                info!("shard meta read from metadata: {meta:#?}");
                 Some(meta)
             }
         }

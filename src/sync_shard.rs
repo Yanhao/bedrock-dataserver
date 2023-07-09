@@ -4,7 +4,6 @@ use parking_lot::RwLock;
 use tokio::{select, sync::mpsc};
 use tracing::{error, info};
 
-use crate::metadata::{Meta, METADATA};
 use crate::ms_client::MS_CLIENT;
 
 pub static SHARD_SYNCER: Lazy<RwLock<ShardSyncer>> = Lazy::new(Default::default);
@@ -28,9 +27,7 @@ impl ShardSyncer {
                         break;
                     }
                     _ = ticker.tick() => {
-                        let shards = METADATA.read().shard_iter();
-
-                        if let Err(e) = MS_CLIENT.sync_shards_to_ms(shards).await {
+                        if let Err(e) = MS_CLIENT.sync_shards_to_ms().await {
                             error!("sync shard to metaserver failed, error: {e}");
                         }
                     }
