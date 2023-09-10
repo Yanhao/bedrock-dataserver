@@ -11,6 +11,7 @@ pub mod format;
 pub mod handler;
 pub mod heartbeat;
 pub mod metadata;
+pub mod migrate_cache;
 mod ms_client;
 pub mod param_check;
 pub mod role;
@@ -61,6 +62,10 @@ pub async fn start_background_tasks() {
 
     heartbeat::HEART_BEATER.write().start();
     sync_shard::SHARD_SYNCER.write().start();
+
+    let mut mc = migrate_cache::MigrateCacher::new();
+    mc.start().expect("start migrate cacher failed");
+    migrate_cache::MIGRATE_CACHE.store(Some(std::sync::Arc::new(mc)));
 
     info!("background tasks start finished");
 }

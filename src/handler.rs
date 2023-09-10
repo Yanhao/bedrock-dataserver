@@ -22,8 +22,9 @@ use idl_gen::service_pb::{
 };
 
 use crate::ds_client::CONNECTIONS;
-use crate::param_check;
+use crate::migrate_cache::ShardMigrateInfo;
 use crate::shard::{Shard, ShardError, KV_RANGE_LIMIT, SHARD_MANAGER};
+use crate::{migrate_cache, param_check};
 
 #[derive(Debug, Default)]
 pub struct RealDataServer {}
@@ -351,6 +352,8 @@ impl DataService for RealDataServer {
         let first = in_stream.next().await.unwrap().unwrap();
 
         if first.direction == migrate_shard_request::Direction::From as i32 {
+            let start_time = std::time::Instant::now();
+
             let shard = self.get_shard(first.shard_id_from).await?;
             let snap = shard.kv_store.create_snapshot_iter().await.unwrap();
 
@@ -384,6 +387,17 @@ impl DataService for RealDataServer {
             shard.mark_deleting();
             shard.stop_role().await.unwrap();
             Shard::remove_shard(shard.get_shard_id()).await.unwrap();
+
+            migrate_cache::MIGRATE_CACHE.load().as_ref().unwrap().put(
+                first.shard_id_from,
+                ShardMigrateInfo {
+                    shard_id: first.shard_id_from,
+                    to_addr: first.target_address.parse().unwrap(),
+                    start_time,
+                    finish_time: std::time::Instant::now(),
+                    expire_at: std::time::Instant::now(),
+                },
+            );
 
             return Ok(Response::new(MigrateShardResponse {}));
         }
