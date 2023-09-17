@@ -3,10 +3,10 @@ use std::net::{AddrParseError, SocketAddr};
 use tracing::warn;
 
 use idl_gen::service_pb::{
-    CreateShardRequest, DeleteShardRequest, LockRangeRequest, LockRecordRequest, MergeShardRequest,
-    MigrateShardRequest, ShardAppendLogRequest, ShardInfoRequest, ShardInstallSnapshotRequest,
-    ShardReadRequest, ShardScanRequest, ShardWriteRequest, SplitShardRequest,
-    TransferShardLeaderRequest,
+    AbortTxRequest, CommitTxRequest, CreateShardRequest, DeleteShardRequest, KvGetRequest,
+    KvScanRequest, KvSetRequest, MergeShardRequest, MigrateShardRequest, ShardAppendLogRequest,
+    ShardInfoRequest, ShardInstallSnapshotRequest, ShardLockRequest, ShardReadRequest,
+    ShardScanRequest, ShardWriteRequest, SplitShardRequest, TransferShardLeaderRequest,
 };
 
 pub fn shard_read_param_check(_req: &ShardReadRequest) -> bool {
@@ -79,10 +79,26 @@ pub fn migrate_shard_param_check(_req: &MigrateShardRequest) -> bool {
     true
 }
 
-pub fn lock_record_param_check(_req: &LockRecordRequest) -> bool {
+pub fn kv_get_param_check(_req: &KvGetRequest) -> bool {
     true
 }
 
-pub fn lock_range_param_check(_req: &LockRangeRequest) -> bool {
+pub fn kv_scan_param_check(_req: &KvScanRequest) -> bool {
+    true
+}
+
+pub fn kv_set_param_check(_req: &KvSetRequest) -> bool {
+    true
+}
+
+pub fn shard_lock_param_check(_req: &ShardLockRequest) -> bool {
+    true
+}
+
+pub fn commit_tx_param_check(_req: &CommitTxRequest) -> bool {
+    true
+}
+
+pub fn abort_tx_param_check(_req: &AbortTxRequest) -> bool {
     true
 }

@@ -10,14 +10,13 @@ use tracing::{debug, error, info, warn};
 use idl_gen::replog_pb;
 use idl_gen::service_pb::data_service_server::DataService;
 use idl_gen::service_pb::{
-    migrate_shard_request, CancelTxRequest, CancelTxResponse, CommitTxRequest, CommitTxResponse,
-    CreateShardRequest, CreateShardResponse, DeleteShardRequest, KeyValue, LockRangeRequest,
-    LockRangeResponse, LockRecordRequest, LockRecordResponse, MergeShardRequest,
-    MergeShardResponse, MigrateShardRequest, MigrateShardResponse, PrepareTxRequest,
-    PrepareTxResponse, ShardAppendLogRequest, ShardAppendLogResponse, ShardInfoRequest,
-    ShardInfoResponse, ShardInstallSnapshotRequest, ShardInstallSnapshotResponse, ShardReadRequest,
-    ShardReadResponse, ShardScanRequest, ShardScanResponse, ShardWriteRequest, ShardWriteResponse,
-    SplitShardRequest, SplitShardResponse, StartTxRequest, StartTxResponse,
+    migrate_shard_request, AbortTxRequest, AbortTxResponse, CommitTxRequest, CommitTxResponse,
+    CreateShardRequest, DeleteShardRequest, KeyValue, KvGetRequest, KvGetResponse, KvScanRequest,
+    KvScanResponse, KvSetRequest, KvSetResponse, MergeShardRequest, MergeShardResponse,
+    MigrateShardRequest, ShardAppendLogRequest, ShardAppendLogResponse, ShardInfoRequest,
+    ShardInfoResponse, ShardInstallSnapshotRequest, ShardInstallSnapshotResponse, ShardLockRequest,
+    ShardLockResponse, ShardReadRequest, ShardReadResponse, ShardScanRequest, ShardScanResponse,
+    ShardWriteRequest, ShardWriteResponse, SplitShardRequest, SplitShardResponse,
     TransferShardLeaderRequest, TransferShardLeaderResponse,
 };
 
@@ -138,17 +137,12 @@ impl DataService for RealDataServer {
         }));
     }
 
-    async fn create_shard(
-        &self,
-        req: Request<CreateShardRequest>,
-    ) -> Result<Response<CreateShardResponse>, Status> {
+    async fn create_shard(&self, req: Request<CreateShardRequest>) -> Result<Response<()>, Status> {
         if !param_check::create_shard_param_check(req.get_ref()) {
             return Err(Status::invalid_argument(""));
         }
 
         info!("create shard, req: {:?}", req);
-
-        let resp = CreateShardResponse::default();
 
         let shard_id = req.get_ref().shard_id;
 
@@ -160,7 +154,7 @@ impl DataService for RealDataServer {
 
         info!("create shard successfully, shard_id: 0x{:016x}", shard_id);
 
-        Ok(Response::new(resp))
+        Ok(Response::new(()))
     }
 
     async fn delete_shard(&self, req: Request<DeleteShardRequest>) -> Result<Response<()>, Status> {
@@ -347,7 +341,7 @@ impl DataService for RealDataServer {
     async fn migrate_shard(
         &self,
         req: Request<Streaming<MigrateShardRequest>>,
-    ) -> Result<Response<MigrateShardResponse>, Status> {
+    ) -> Result<Response<()>, Status> {
         let mut in_stream = req.into_inner();
         let first = in_stream.next().await.unwrap().unwrap();
 
@@ -399,7 +393,7 @@ impl DataService for RealDataServer {
                 },
             );
 
-            return Ok(Response::new(MigrateShardResponse {}));
+            return Ok(Response::new(()));
         }
 
         if first.direction == migrate_shard_request::Direction::To as i32 {
@@ -420,7 +414,7 @@ impl DataService for RealDataServer {
                 }
             }
 
-            return Ok(Response::new(MigrateShardResponse {}));
+            return Ok(Response::new(()));
         }
 
         return Err(Status::invalid_argument(""));
@@ -464,58 +458,46 @@ impl DataService for RealDataServer {
         Ok(Response::new(MergeShardResponse {}))
     }
 
-    async fn start_tx(
+    async fn kv_get(
         &self,
-        _req: Request<StartTxRequest>,
-    ) -> Result<Response<StartTxResponse>, Status> {
-        Err(Status::unimplemented(""))
+        request: Request<KvGetRequest>,
+    ) -> Result<Response<KvGetResponse>, Status> {
+        todo!()
     }
 
-    async fn lock_record(
+    async fn kv_scan(
         &self,
-        req: Request<LockRecordRequest>,
-    ) -> Result<Response<LockRecordResponse>, Status> {
-        if !param_check::lock_record_param_check(req.get_ref()) {
-            return Err(Status::invalid_argument(""));
-        }
-
-        let shard_id = req.get_ref().shard_id;
-        let _shard = self.get_shard(shard_id).await?;
-
-        // let res = shard.read().await.get(req.get_ref().key.as_ref());
-        // if let Ok(_) = res {
-
-        // }
-
-        return Ok(Response::new(LockRecordResponse {}));
+        request: Request<KvScanRequest>,
+    ) -> Result<Response<KvScanResponse>, Status> {
+        todo!()
     }
 
-    async fn lock_range(
+    async fn kv_set(
         &self,
-        _req: Request<LockRangeRequest>,
-    ) -> Result<Response<LockRangeResponse>, Status> {
-        Err(Status::unimplemented(""))
+        request: Request<KvSetRequest>,
+    ) -> Result<Response<KvSetResponse>, Status> {
+        todo!()
     }
 
-    async fn prepare_tx(
+    async fn shard_lock(
         &self,
-        _req: Request<PrepareTxRequest>,
-    ) -> Result<Response<PrepareTxResponse>, Status> {
-        Err(Status::unimplemented(""))
+        request: Request<ShardLockRequest>,
+    ) -> Result<Response<ShardLockResponse>, Status> {
+        todo!()
     }
 
     async fn commit_tx(
         &self,
-        _req: Request<CommitTxRequest>,
+        request: Request<CommitTxRequest>,
     ) -> Result<Response<CommitTxResponse>, Status> {
-        Err(Status::unimplemented(""))
+        todo!()
     }
 
-    async fn cancel_tx(
+    async fn abort_tx(
         &self,
-        _req: Request<CancelTxRequest>,
-    ) -> Result<Response<CancelTxResponse>, Status> {
-        Err(Status::unimplemented(""))
+        request: Request<AbortTxRequest>,
+    ) -> Result<Response<AbortTxResponse>, Status> {
+        todo!()
     }
 }
 
