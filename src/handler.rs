@@ -15,9 +15,8 @@ use idl_gen::service_pb::{
     KvScanResponse, KvSetRequest, KvSetResponse, MergeShardRequest, MergeShardResponse,
     MigrateShardRequest, ShardAppendLogRequest, ShardAppendLogResponse, ShardInfoRequest,
     ShardInfoResponse, ShardInstallSnapshotRequest, ShardInstallSnapshotResponse, ShardLockRequest,
-    ShardLockResponse, ShardReadRequest, ShardReadResponse, ShardScanRequest, ShardScanResponse,
-    ShardWriteRequest, ShardWriteResponse, SplitShardRequest, SplitShardResponse,
-    TransferShardLeaderRequest, TransferShardLeaderResponse,
+    ShardLockResponse, SplitShardRequest, SplitShardResponse, TransferShardLeaderRequest,
+    TransferShardLeaderResponse,
 };
 
 use crate::ds_client::CONNECTIONS;
@@ -30,113 +29,6 @@ pub struct RealDataServer {}
 
 #[tonic::async_trait]
 impl DataService for RealDataServer {
-    async fn shard_read(
-        &self,
-        req: Request<ShardReadRequest>,
-    ) -> Result<Response<ShardReadResponse>, Status> {
-        if !param_check::shard_read_param_check(req.get_ref()) {
-            return Err(Status::invalid_argument(""));
-        }
-
-        info!("shard read, req: {:?}", req);
-
-        let shard_id = req.get_ref().shard_id;
-        let shard = self.get_shard(shard_id).await?;
-
-        let value = shard
-            .kv_store
-            .kv_get(&req.get_ref().key)
-            .await
-            .map_err(|_| Status::not_found("no such key"))?;
-
-        let resp = ShardReadResponse { value };
-
-        Ok(Response::new(resp))
-    }
-
-    async fn shard_write(
-        &self,
-        req: Request<ShardWriteRequest>,
-    ) -> Result<Response<ShardWriteResponse>, Status> {
-        if !param_check::shard_write_param_check(req.get_ref()) {
-            return Err(Status::invalid_argument(""));
-        }
-
-        info!("shard write, req: {:?}", req);
-        debug!("shard write: key len: {}", req.get_ref().key.len());
-        debug!("shard write: value len: {}", req.get_ref().value.len());
-
-        let shard_id = req.get_ref().shard_id;
-        let shard = self.get_shard(shard_id).await?;
-
-        if !shard.is_leader() {
-            return Err(Status::unavailable("not leader"));
-        }
-
-        let mut entry_with_notifier = shard
-            .process_write("put", &req.get_ref().key, &req.get_ref().value)
-            .await
-            .map_err(|_| Status::internal("process write failed"))?;
-
-        info!("start wait result");
-        if let Err(e) = entry_with_notifier.wait_result().await {
-            if let Some(ShardError::NotLeader) = e.downcast_ref() {
-                error!("wait failed: not leader");
-                return Ok(Response::new(ShardWriteResponse { not_leader: true }));
-            }
-
-            error!("wait failed: {}", e);
-            return Err(Status::internal("internal error"));
-        }
-        info!("end wait result");
-
-        shard
-            .apply_entry(&entry_with_notifier.entry)
-            .await
-            .map_err(|_| Status::internal("internal error"))?;
-
-        return Ok(Response::new(ShardWriteResponse { not_leader: false }));
-    }
-
-    async fn shard_scan(
-        &self,
-        req: Request<ShardScanRequest>,
-    ) -> Result<Response<ShardScanResponse>, Status> {
-        if !param_check::shard_scan_param_check(req.get_ref()) {
-            return Err(Status::invalid_argument(""));
-        }
-
-        let shard_id = req.get_ref().shard_id;
-        let shard = self.get_shard(shard_id).await?;
-
-        if shard.is_key_within_shard(&req.get_ref().start_key) {
-            return Err(Status::invalid_argument(""));
-        }
-
-        let kvs = shard
-            .kv_store
-            .kv_scan(
-                &req.get_ref().start_key,
-                &req.get_ref().end_key,
-                KV_RANGE_LIMIT,
-            )
-            .await
-            .unwrap();
-
-        return Ok(Response::new(ShardScanResponse {
-            kvs: kvs
-                .iter()
-                .map(|kv| KeyValue {
-                    key: kv.key.clone(),
-                    value: kv.value.clone(),
-                })
-                .collect(),
-            no_left: shard.is_key_within_shard(&req.get_ref().start_key)
-                && shard.is_key_within_shard(&req.get_ref().end_key)
-                && kvs.is_empty(),
-        }));
-    }
-
     async fn create_shard(&self, req: Request<CreateShardRequest>) -> Result<Response<()>, Status> {
         if !param_check::create_shard_param_check(req.get_ref()) {
             return Err(Status::invalid_argument(""));
@@ -458,25 +350,99 @@ impl DataService for RealDataServer {
         Ok(Response::new(MergeShardResponse {}))
     }
 
-    async fn kv_get(
-        &self,
-        request: Request<KvGetRequest>,
-    ) -> Result<Response<KvGetResponse>, Status> {
-        todo!()
+    async fn kv_get(&self, req: Request<KvGetRequest>) -> Result<Response<KvGetResponse>, Status> {
+        if !param_check::kv_get_param_check(req.get_ref()) {
+            return Err(Status::invalid_argument(""));
+        }
+
+        info!("kvget, req: {:?}", req);
+
+        let shard = self.get_shard(req.get_ref().shard_id).await?;
+
+        let value = shard
+            .kv_store
+            .kv_get(&req.get_ref().key)
+            .await
+            .map_err(|_| Status::not_found("no such key"))?;
+
+        Ok(Response::new(KvGetResponse { value }))
     }
 
     async fn kv_scan(
         &self,
-        request: Request<KvScanRequest>,
+        req: Request<KvScanRequest>,
     ) -> Result<Response<KvScanResponse>, Status> {
-        todo!()
+        if !param_check::kv_scan_param_check(req.get_ref()) {
+            return Err(Status::invalid_argument(""));
+        }
+
+        let shard = self.get_shard(req.get_ref().shard_id).await?;
+
+        if shard.is_key_within_shard(&req.get_ref().start_key) {
+            return Err(Status::invalid_argument(""));
+        }
+
+        let kvs = shard
+            .kv_store
+            .kv_scan(
+                &req.get_ref().start_key,
+                &req.get_ref().end_key,
+                KV_RANGE_LIMIT,
+            )
+            .await
+            .unwrap();
+
+        return Ok(Response::new(KvScanResponse {
+            kvs: kvs
+                .iter()
+                .map(|kv| KeyValue {
+                    key: kv.key.clone(),
+                    value: kv.value.clone(),
+                })
+                .collect(),
+            no_left: shard.is_key_within_shard(&req.get_ref().start_key)
+                && shard.is_key_within_shard(&req.get_ref().end_key)
+                && kvs.is_empty(),
+        }));
     }
 
-    async fn kv_set(
-        &self,
-        request: Request<KvSetRequest>,
-    ) -> Result<Response<KvSetResponse>, Status> {
-        todo!()
+    async fn kv_set(&self, req: Request<KvSetRequest>) -> Result<Response<KvSetResponse>, Status> {
+        if !param_check::kv_set_param_check(req.get_ref()) {
+            return Err(Status::invalid_argument(""));
+        }
+
+        info!("kvset, req: {:?}", req);
+        debug!("kvset: key len: {}", req.get_ref().key.len());
+        debug!("kvset: value len: {}", req.get_ref().value.len());
+
+        let shard = self.get_shard(req.get_ref().shard_id).await?;
+        if !shard.is_leader() {
+            return Err(Status::unavailable("not leader"));
+        }
+
+        let mut entry_with_notifier = shard
+            .process_write("put", &req.get_ref().key, &req.get_ref().value)
+            .await
+            .map_err(|_| Status::internal("process write failed"))?;
+
+        info!("start wait result");
+        if let Err(e) = entry_with_notifier.wait_result().await {
+            if let Some(ShardError::NotLeader) = e.downcast_ref() {
+                error!("wait failed: not leader");
+                return Ok(Response::new(KvSetResponse {}));
+            }
+
+            error!("wait failed: {}", e);
+            return Err(Status::internal("internal error"));
+        }
+        info!("end wait result");
+
+        shard
+            .apply_entry(&entry_with_notifier.entry)
+            .await
+            .map_err(|_| Status::internal("internal error"))?;
+
+        return Ok(Response::new(KvSetResponse {}));
     }
 
     async fn shard_lock(

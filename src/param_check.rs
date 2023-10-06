@@ -5,21 +5,9 @@ use tracing::warn;
 use idl_gen::service_pb::{
     AbortTxRequest, CommitTxRequest, CreateShardRequest, DeleteShardRequest, KvGetRequest,
     KvScanRequest, KvSetRequest, MergeShardRequest, MigrateShardRequest, ShardAppendLogRequest,
-    ShardInfoRequest, ShardInstallSnapshotRequest, ShardLockRequest, ShardReadRequest,
-    ShardScanRequest, ShardWriteRequest, SplitShardRequest, TransferShardLeaderRequest,
+    ShardInfoRequest, ShardInstallSnapshotRequest, ShardLockRequest, SplitShardRequest,
+    TransferShardLeaderRequest,
 };
-
-pub fn shard_read_param_check(_req: &ShardReadRequest) -> bool {
-    true
-}
-
-pub fn shard_write_param_check(_req: &ShardWriteRequest) -> bool {
-    true
-}
-
-pub fn shard_scan_param_check(_req: &ShardScanRequest) -> bool {
-    true
-}
 
 pub fn create_shard_param_check(req: &CreateShardRequest) -> bool {
     if !req.leader.is_empty() {
