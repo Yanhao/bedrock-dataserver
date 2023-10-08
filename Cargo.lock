@@ -376,6 +376,7 @@ dependencies = [
  "arc-swap",
  "async-channel",
  "async-trait",
+ "bytes",
  "chrono",
  "clap",
  "console-subscriber",

@@ -1,9 +1,11 @@
 use thiserror::Error;
 
+mod operation;
 #[allow(clippy::module_inception)]
 mod shard;
 mod shard_manager;
 
+pub use operation::Operation;
 pub use shard::{EntryWithNotifierSender, Shard};
 pub use shard_manager::{ShardManager, SHARD_MANAGER};
 

@@ -10,19 +10,21 @@ use tracing::{debug, error, info, warn};
 use idl_gen::replog_pb;
 use idl_gen::service_pb::data_service_server::DataService;
 use idl_gen::service_pb::{
-    migrate_shard_request, AbortTxRequest, AbortTxResponse, CommitTxRequest, CommitTxResponse,
-    CreateShardRequest, DeleteShardRequest, KeyValue, KvGetRequest, KvGetResponse, KvScanRequest,
-    KvScanResponse, KvSetRequest, KvSetResponse, MergeShardRequest, MergeShardResponse,
-    MigrateShardRequest, ShardAppendLogRequest, ShardAppendLogResponse, ShardInfoRequest,
-    ShardInfoResponse, ShardInstallSnapshotRequest, ShardInstallSnapshotResponse, ShardLockRequest,
-    ShardLockResponse, SplitShardRequest, SplitShardResponse, TransferShardLeaderRequest,
-    TransferShardLeaderResponse,
+    migrate_shard_request, shard_lock_request, AbortTxRequest, AbortTxResponse, CommitTxRequest,
+    CommitTxResponse, CreateShardRequest, DeleteShardRequest, KeyValue, KvGetRequest,
+    KvGetResponse, KvScanRequest, KvScanResponse, KvSetRequest, KvSetResponse, MergeShardRequest,
+    MergeShardResponse, MigrateShardRequest, PrepareTxRequest, PrepareTxResponse,
+    ShardAppendLogRequest, ShardAppendLogResponse, ShardInfoRequest, ShardInfoResponse,
+    ShardInstallSnapshotRequest, ShardInstallSnapshotResponse, ShardLockRequest, ShardLockResponse,
+    SplitShardRequest, SplitShardResponse, TransferShardLeaderRequest, TransferShardLeaderResponse,
 };
 
 use crate::ds_client::CONNECTIONS;
 use crate::migrate_cache::ShardMigrateInfo;
-use crate::shard::{Shard, ShardError, KV_RANGE_LIMIT, SHARD_MANAGER};
-use crate::{migrate_cache, param_check};
+use crate::mvcc::{LockTable, MvccStore};
+use crate::shard::{self, Shard, ShardError, KV_RANGE_LIMIT, SHARD_MANAGER};
+use crate::store::KvStore;
+use crate::{migrate_cache, param_check, utils};
 
 #[derive(Debug, Default)]
 pub struct RealDataServer {}
@@ -185,8 +187,18 @@ impl DataService for RealDataServer {
             // shard.kv_store.clear_data().await;
             shard
                 .kv_store
-                .install_snapshot(piece.entries)
-                .await
+                .install_snapshot(
+                    piece
+                        .entries
+                        .into_iter()
+                        .map(|e| {
+                            (
+                                unsafe { String::from_utf8_unchecked(e.key) },
+                                e.value.into(),
+                            )
+                        })
+                        .collect(),
+                )
                 .unwrap();
         }
 
@@ -241,7 +253,7 @@ impl DataService for RealDataServer {
             let start_time = std::time::Instant::now();
 
             let shard = self.get_shard(first.shard_id_from).await?;
-            let snap = shard.kv_store.create_snapshot_iter().await.unwrap();
+            let snap = shard.kv_store.take_snapshot().unwrap();
 
             let mut client = CONNECTIONS.get_client(&first.target_address).await.unwrap();
 
@@ -259,8 +271,8 @@ impl DataService for RealDataServer {
                     direction: migrate_shard_request::Direction::To as i32,
                     target_address: "".to_string(),
                     entries: vec![migrate_shard_request::Entry {
-                        key: kv.0.to_owned(),
-                        value: kv.1.to_owned(),
+                        key: kv.0.to_owned().into(),
+                        value: kv.1.to_owned().to_vec(),
                     }],
                 })
             }
@@ -302,7 +314,13 @@ impl DataService for RealDataServer {
                 }
 
                 for kv in piece.entries.into_iter() {
-                    shard.kv_store.kv_set(&kv.key, &kv.value).await.unwrap();
+                    shard
+                        .kv_store
+                        .kv_set(
+                            &unsafe { String::from_utf8_unchecked(kv.key) },
+                            kv.value.to_vec().into(),
+                        )
+                        .unwrap();
                 }
             }
 
@@ -359,13 +377,17 @@ impl DataService for RealDataServer {
 
         let shard = self.get_shard(req.get_ref().shard_id).await?;
 
-        let value = shard
-            .kv_store
-            .kv_get(&req.get_ref().key)
-            .await
-            .map_err(|_| Status::not_found("no such key"))?;
+        let value = MvccStore::new(shard)
+            .get_until_version(
+                &unsafe { String::from_utf8_unchecked(req.get_ref().key.clone()) },
+                req.get_ref().txid,
+            )
+            .map_err(|_| Status::not_found("no such key"))?
+            .ok_or(Status::not_found("not such key"))?;
 
-        Ok(Response::new(KvGetResponse { value }))
+        Ok(Response::new(KvGetResponse {
+            value: value.to_vec(),
+        }))
     }
 
     async fn kv_scan(
@@ -382,22 +404,24 @@ impl DataService for RealDataServer {
             return Err(Status::invalid_argument(""));
         }
 
-        let kvs = shard
-            .kv_store
-            .kv_scan(
-                &req.get_ref().start_key,
-                &req.get_ref().end_key,
-                KV_RANGE_LIMIT,
+        let kvs = MvccStore::new(shard.clone())
+            .scan_util_version(
+                &utils::common_prefix(
+                    &unsafe { String::from_utf8_unchecked(req.get_ref().start_key.clone()) },
+                    &unsafe { String::from_utf8_unchecked(req.get_ref().end_key.clone()) },
+                ),
+                req.get_ref().txid,
+                KV_RANGE_LIMIT as usize,
             )
-            .await
             .unwrap();
 
         return Ok(Response::new(KvScanResponse {
             kvs: kvs
-                .iter()
-                .map(|kv| KeyValue {
-                    key: kv.key.clone(),
-                    value: kv.value.clone(),
+                .clone()
+                .into_iter()
+                .map(|(key, value)| KeyValue {
+                    key: key.into(),
+                    value: value.to_vec(),
                 })
                 .collect(),
             no_left: shard.is_key_within_shard(&req.get_ref().start_key)
@@ -420,50 +444,135 @@ impl DataService for RealDataServer {
             return Err(Status::unavailable("not leader"));
         }
 
-        let mut entry_with_notifier = shard
-            .process_write("put", &req.get_ref().key, &req.get_ref().value)
+        let mvcc_store = MvccStore::new(shard);
+        mvcc_store
+            .set_with_version(
+                req.get_ref().txid,
+                &unsafe { String::from_utf8_unchecked(req.get_ref().key.clone()) },
+                req.get_ref().value.clone().into(),
+            )
             .await
-            .map_err(|_| Status::internal("process write failed"))?;
+            .map_err(|_| Status::internal("set_with_version failed"))?;
 
-        info!("start wait result");
-        if let Err(e) = entry_with_notifier.wait_result().await {
-            if let Some(ShardError::NotLeader) = e.downcast_ref() {
-                error!("wait failed: not leader");
-                return Ok(Response::new(KvSetResponse {}));
-            }
-
-            error!("wait failed: {}", e);
-            return Err(Status::internal("internal error"));
-        }
-        info!("end wait result");
-
-        shard
-            .apply_entry(&entry_with_notifier.entry)
+        mvcc_store
+            .commit_tx(req.get_ref().txid)
             .await
-            .map_err(|_| Status::internal("internal error"))?;
+            .map_err(|_| Status::internal("commit_tx failed"))?;
 
         return Ok(Response::new(KvSetResponse {}));
     }
 
     async fn shard_lock(
         &self,
-        request: Request<ShardLockRequest>,
+        req: Request<ShardLockRequest>,
     ) -> Result<Response<ShardLockResponse>, Status> {
-        todo!()
+        if !param_check::shard_lock_param_check(req.get_ref()) {
+            return Err(Status::invalid_argument(""));
+        }
+
+        let shard = self.get_shard(req.get_ref().shard_id).await?;
+        if !shard.is_leader() {
+            return Err(Status::unavailable("not leader"));
+        }
+
+        if req.get_ref().lock.is_none() {
+            return Ok(Response::new(ShardLockResponse {}));
+        }
+
+        let mvcc_store = MvccStore::new(shard);
+        let lock = req.get_ref().lock.clone().unwrap();
+        match lock {
+            shard_lock_request::Lock::Record(l) => {
+                mvcc_store
+                    .lock_record(&unsafe { String::from_utf8_unchecked(l) })
+                    .await
+                    .map_err(|_| Status::internal("lock failed"))?;
+            }
+            shard_lock_request::Lock::Range(l) => {
+                mvcc_store
+                    .lock_range(
+                        &unsafe { String::from_utf8_unchecked(l.start_key) },
+                        &unsafe { String::from_utf8_unchecked(l.end_key) },
+                    )
+                    .await
+                    .map_err(|_| Status::internal("lock failed"))?;
+            }
+        }
+
+        return Ok(Response::new(ShardLockResponse {}));
+    }
+
+    async fn prepare_tx(
+        &self,
+        req: Request<PrepareTxRequest>,
+    ) -> Result<Response<PrepareTxResponse>, Status> {
+        if !param_check::prpare_tx_param_check(req.get_ref()) {
+            return Err(Status::invalid_argument(""));
+        }
+
+        let shard = self.get_shard(req.get_ref().shard_id).await?;
+        if !shard.is_leader() {
+            return Err(Status::unavailable("not leader"));
+        }
+
+        let mvcc_store = MvccStore::new(shard);
+
+        for kv in req.get_ref().kvs.iter() {
+            mvcc_store
+                .set_with_version(
+                    req.get_ref().txid,
+                    &unsafe { String::from_utf8_unchecked(kv.key.clone()) },
+                    kv.value.clone().into(),
+                )
+                .await
+                .map_err(|_| Status::internal("set_with_version failed"))?;
+        }
+
+        return Ok(Response::new(PrepareTxResponse {}));
     }
 
     async fn commit_tx(
         &self,
-        request: Request<CommitTxRequest>,
+        req: Request<CommitTxRequest>,
     ) -> Result<Response<CommitTxResponse>, Status> {
-        todo!()
+        if !param_check::commit_tx_param_check(req.get_ref()) {
+            return Err(Status::invalid_argument(""));
+        }
+
+        let shard = self.get_shard(req.get_ref().shard_id).await?;
+        if !shard.is_leader() {
+            return Err(Status::unavailable("not leader"));
+        }
+
+        let mvcc_store = MvccStore::new(shard);
+        mvcc_store
+            .commit_tx(req.get_ref().txid)
+            .await
+            .map_err(|_| Status::internal("commit_tx failed"))?;
+
+        return Ok(Response::new(CommitTxResponse {}));
     }
 
     async fn abort_tx(
         &self,
-        request: Request<AbortTxRequest>,
+        req: Request<AbortTxRequest>,
     ) -> Result<Response<AbortTxResponse>, Status> {
-        todo!()
+        if !param_check::abort_tx_param_check(req.get_ref()) {
+            return Err(Status::invalid_argument(""));
+        }
+
+        let shard = self.get_shard(req.get_ref().shard_id).await?;
+        if !shard.is_leader() {
+            return Err(Status::unavailable("not leader"));
+        }
+
+        let mvcc_store = MvccStore::new(shard);
+        mvcc_store
+            .abort_tx(req.get_ref().txid)
+            .await
+            .map_err(|_| Status::internal("abort_tx failed"))?;
+
+        return Ok(Response::new(AbortTxResponse {}));
     }
 }
 

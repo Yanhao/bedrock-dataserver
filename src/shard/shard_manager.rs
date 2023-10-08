@@ -5,6 +5,7 @@ use anyhow::Result;
 use once_cell::sync::Lazy;
 
 use super::Shard;
+use crate::store::KvStore;
 use crate::wal::Wal;
 
 const _DEFAULT_SHARD_CAPACITY: u64 = 10240;
@@ -80,13 +81,15 @@ impl ShardManager {
             let key = kv.0.to_owned();
             let value = kv.1.to_owned();
 
-            new_shard.kv_store.kv_set(&key, &value).await?;
+            new_shard.kv_store.kv_set(&key, value)?;
         }
 
         shard
             .kv_store
-            .kv_delete_range(&start_key, &end_key)
-            .await
+            .kv_delete_range(
+                &unsafe { String::from_utf8_unchecked(start_key) },
+                &unsafe { String::from_utf8_unchecked(end_key) },
+            )
             .unwrap();
 
         new_shard.start_role().await?;
@@ -98,13 +101,13 @@ impl ShardManager {
         let shard_a = self.load_shard(shard_id_a).await?;
         let shard_b = self.load_shard(shard_id_b).await?;
 
-        let iter = shard_b.kv_store.create_snapshot_iter().await?;
+        let iter = shard_b.kv_store.take_snapshot()?;
 
         for kv in iter.into_iter() {
             let key = kv.0.to_owned();
             let value = kv.1.to_owned();
 
-            shard_a.kv_store.kv_set(&key, &value).await?;
+            shard_a.kv_store.kv_set(&key, value)?;
         }
 
         shard_b.stop_role().await?;

@@ -1,4 +1,5 @@
 #![feature(result_option_inspect)]
+#![feature(return_position_impl_trait_in_trait)]
 #![feature(impl_trait_in_assoc_type)]
 #![feature(async_closure)]
 
@@ -13,12 +14,14 @@ pub mod heartbeat;
 pub mod metadata;
 pub mod migrate_cache;
 mod ms_client;
+pub mod mvcc;
 pub mod param_check;
 pub mod role;
 pub mod shard;
 mod shutdown;
 pub mod store;
 pub mod sync_shard;
+pub mod utils;
 pub mod wal;
 
 pub async fn start_background_tasks() {

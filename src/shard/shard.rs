@@ -7,6 +7,7 @@ use std::vec::Vec;
 
 use anyhow::{anyhow, bail, Result};
 use arc_swap::ArcSwapOption;
+use bytes::Bytes;
 use futures_util::stream;
 use num_bigint::{BigUint, ToBigUint};
 use parking_lot;
@@ -26,8 +27,11 @@ use crate::ds_client::CONNECTIONS;
 use crate::metadata::{Meta, METADATA};
 use crate::role::{Follower, Leader, Role};
 use crate::shard::ShardError;
+use crate::store::kv_store::KvStore;
 use crate::store::{kv_store, SledStore};
 use crate::wal::{Wal, WalTrait};
+
+use super::Operation;
 
 const INPUT_CHANNEL_LEN: usize = 10240;
 const SHARD_META_KEY: &str = "shard_meta";
@@ -80,7 +84,7 @@ impl Shard {
 
         Shard {
             shard_meta: Arc::new(parking_lot::RwLock::new(meta)),
-            kv_store,
+            kv_store: kv_store.clone(),
             replog: Arc::new(RwLock::new(wal)),
             deleting: false.into(),
             installing_snapshot: false.into(),
@@ -94,7 +98,9 @@ impl Shard {
     pub async fn create_shard(req: &Request<CreateShardRequest>) -> Result<()> {
         let shard_id = req.get_ref().shard_id;
 
-        let sled_db = SledStore::create(shard_id).await.unwrap();
+        SledStore::create(shard_id).await?;
+        let sled_db = SledStore::load(shard_id).await?;
+
         let meta = ShardMeta {
             shard_id,
             is_leader: CONFIG.read().get_self_socket_addr().to_string() == req.get_ref().leader,
@@ -116,7 +122,7 @@ impl Shard {
             buf
         };
 
-        sled_db.kv_set(SHARD_META_KEY.as_bytes(), &meta_buf).await?;
+        sled_db.kv_set(SHARD_META_KEY, meta_buf.into())?;
 
         Wal::create_wal_dir(shard_id).await?;
 
@@ -132,7 +138,8 @@ impl Shard {
         next_index: u64,
         key_range: Range<Vec<u8>>,
     ) -> Result<Self> {
-        let sled_db = SledStore::create(shard_id).await.unwrap();
+        SledStore::create(shard_id).await?;
+        let sled_db = SledStore::load(shard_id).await?;
 
         let meta = ShardMeta {
             shard_id,
@@ -152,7 +159,7 @@ impl Shard {
 
         let mut meta_buf = Vec::new();
         meta.encode(&mut meta_buf).unwrap();
-        sled_db.kv_set(SHARD_META_KEY.as_bytes(), &meta_buf).await?;
+        sled_db.kv_set(SHARD_META_KEY, meta_buf.into())?;
 
         METADATA.write().put_shard(shard_id, meta.clone())?;
 
@@ -164,9 +171,8 @@ impl Shard {
     pub async fn load_shard(shard_id: u64) -> Result<Self> {
         let sled_db = SledStore::load(shard_id).await.unwrap();
 
-        let meta_key = SHARD_META_KEY.as_bytes();
-        let raw_meta = sled_db.kv_get(meta_key).await.unwrap();
-        let meta = ShardMeta::decode(raw_meta.as_slice()).unwrap();
+        let raw_meta = sled_db.kv_get(SHARD_META_KEY)?.unwrap();
+        let meta = ShardMeta::decode(raw_meta).unwrap();
         let wal = Wal::load_wal_by_shard_id(shard_id).await?;
         info!("shard meta: {:?}", meta);
 
@@ -258,8 +264,7 @@ impl Shard {
         let mut meta_buf = Vec::new();
         self.shard_meta.read().encode(&mut meta_buf).unwrap();
         self.kv_store
-            .kv_set(SHARD_META_KEY.as_bytes(), &meta_buf)
-            .await?;
+            .kv_set(SHARD_META_KEY, meta_buf.to_vec().into())?;
 
         METADATA
             .write()
@@ -308,7 +313,7 @@ impl Shard {
         &self,
         start_key: &[u8],
         end_key: &[u8],
-    ) -> Result<impl Iterator<Item = (Vec<u8>, Vec<u8>)>> {
+    ) -> Result<impl Iterator<Item = (String, Bytes)>> {
         Ok(kv_store::StoreIter {
             iter: self.kv_store.db.range(start_key..end_key),
         })
@@ -318,12 +323,12 @@ impl Shard {
 impl Shard {
     pub async fn process_write(
         &self,
-        op: &str,
+        op: Operation,
         key: &[u8],
         value: &[u8],
     ) -> Result<EntryWithNotifierReceiver> {
         let mut entry = Entry {
-            op: op.into(),
+            op: op.to_string(),
             key: key.to_owned(),
             value: value.to_owned(),
             ..Default::default()
@@ -375,15 +380,25 @@ impl Shard {
         Ok(())
     }
 
-    pub async fn apply_entry(&self, entry: &Entry) -> Result<()> {
-        if entry.op == "put" {
-            self.kv_store
-                .kv_set(&entry.key, &entry.value)
-                .await
-                .unwrap();
+    pub async fn apply_entry(&self, entry: &Entry) -> Result<Option<Bytes>> {
+        let op: Operation = entry.op.clone().into();
+
+        match op {
+            Operation::Noop => unreachable!(),
+            Operation::Set => {
+                self.kv_store.kv_set(
+                    &unsafe { String::from_utf8_unchecked(entry.key.clone()) },
+                    entry.value.clone().into(),
+                )?;
+            }
+            Operation::Del => {
+                return self
+                    .kv_store
+                    .kv_delete(&unsafe { String::from_utf8_unchecked(entry.key.clone()) });
+            }
         }
 
-        Ok(())
+        Ok(None)
     }
 
     pub async fn append_log_entry_to(
@@ -483,7 +498,7 @@ impl Shard {
         mut client: data_service_client::DataServiceClient<tonic::transport::Channel>,
         addr: &str,
     ) -> Result<u64 /*last_wal_index */> {
-        let snap = self.kv_store.create_snapshot_iter().await?;
+        let snap = self.kv_store.take_snapshot()?;
 
         let next_wal_index = self.get_next_index().await; // FIXME: keep atomic with above
 
@@ -496,7 +511,10 @@ impl Shard {
             req_stream.push(ShardInstallSnapshotRequest {
                 shard_id: self.get_shard_id(),
                 next_index: next_wal_index,
-                entries: vec![shard_install_snapshot_request::Entry { key, value }],
+                entries: vec![shard_install_snapshot_request::Entry {
+                    key: key.into(),
+                    value: value.to_vec(),
+                }],
             })
         }
 

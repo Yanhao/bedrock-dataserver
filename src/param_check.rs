@@ -6,7 +6,7 @@ use idl_gen::service_pb::{
     AbortTxRequest, CommitTxRequest, CreateShardRequest, DeleteShardRequest, KvGetRequest,
     KvScanRequest, KvSetRequest, MergeShardRequest, MigrateShardRequest, ShardAppendLogRequest,
     ShardInfoRequest, ShardInstallSnapshotRequest, ShardLockRequest, SplitShardRequest,
-    TransferShardLeaderRequest,
+    TransferShardLeaderRequest, PrepareTxRequest,
 };
 
 pub fn create_shard_param_check(req: &CreateShardRequest) -> bool {
@@ -80,6 +80,10 @@ pub fn kv_set_param_check(_req: &KvSetRequest) -> bool {
 }
 
 pub fn shard_lock_param_check(_req: &ShardLockRequest) -> bool {
+    true
+}
+
+pub fn prpare_tx_param_check(_req: &PrepareTxRequest) -> bool {
     true
 }
 

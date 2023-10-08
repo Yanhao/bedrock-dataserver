@@ -1,15 +1,15 @@
 use std::iter::Iterator;
 use std::path::PathBuf;
 
-use anyhow::{bail, Result};
-use idl_gen::service_pb::shard_install_snapshot_request;
+use anyhow::Result;
+use bytes::Bytes;
 use sled;
 use tokio::fs::remove_dir_all;
 use tracing::{debug, error, info};
 
 use crate::{config::CONFIG, shard::Shard};
 
-use super::KvStoreError;
+use super::KvStore;
 
 pub struct SledStore {
     pub db: sled::Db,
@@ -40,12 +40,13 @@ impl SledStore {
         Ok(Self { db: store })
     }
 
-    pub async fn create(shard_id: u64) -> Result<Self> {
+    pub async fn create(shard_id: u64) -> Result<()> {
         info!("create shard sledkv db 0x{:016x}", shard_id);
 
         let path = Self::db_path(shard_id);
-        let store = sled::open(path).unwrap();
-        Ok(Self { db: store })
+        let _ = sled::open(path).unwrap();
+
+        Ok(())
     }
 
     pub async fn remove(shard_id: u64) -> Result<()> {
@@ -56,92 +57,36 @@ impl SledStore {
 
         Ok(())
     }
-
-    pub async fn kv_get(&self, key: &[u8]) -> Result<Vec<u8>> {
-        let iv = match self.db.get(key) {
-            Err(e) => {
-                error!("sledkv get failed, err: {e}");
-                bail!(KvStoreError::DbInternalError);
-            }
-            Ok(v) => v,
-        };
-        if iv.is_none() {
-            bail!(KvStoreError::NoSuchkey);
-        }
-        let v = iv.unwrap();
-        Ok(v.as_ref().to_owned())
-    }
-
-    pub async fn kv_set(&self, key: &[u8], value: &[u8]) -> Result<()> {
-        self.db.insert(key, value)?;
-
-        Ok(())
-    }
-
-    pub async fn kv_scan(
-        &self,
-        start_key: &[u8],
-        end_key: &[u8],
-        limit: i32,
-    ) -> Result<Vec<KeyValue>> {
-        let iter = self.db.range(start_key..end_key);
-
-        let mut kvs = vec![];
-
-        for (count, kv) in iter.enumerate() {
-            if count >= limit as usize {
-                break;
-            }
-
-            let kv = kv.unwrap();
-
-            kvs.push(KeyValue {
-                key: kv.0.as_ref().to_owned(),
-                value: kv.1.as_ref().to_owned(),
-            });
-        }
-
-        Ok(kvs)
-    }
-
-    pub async fn kv_delete_range(&self, start_key: &[u8], _end_key: &[u8]) -> Result<()> {
-        // FIXME:
-        let start_key: Vec<u8> = start_key.into();
-
-        loop {
-            let (key, _) = self.db.pop_max().unwrap().unwrap();
-            let key: Vec<u8> = key.as_ref().to_owned();
-            if key < start_key {
-                self.db.remove(key)?;
-                break;
-            }
-        }
-
-        Ok(())
-    }
-
-    pub async fn clear_data(&self) {
-        todo!()
-    }
-}
-
-pub struct StoreIter {
-    pub iter: sled::Iter,
-}
-
-impl Iterator for StoreIter {
-    type Item = (Vec<u8>, Vec<u8>);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let item = self.iter.next()?.unwrap();
-        let (key, value) = item;
-
-        Some((key.as_ref().to_owned(), value.as_ref().to_owned()))
-    }
 }
 
 impl SledStore {
-    pub async fn create_snapshot_iter(&self) -> Result<impl Iterator<Item = (Vec<u8>, Vec<u8>)>> {
+    // pub async fn kv_scan(
+    //     &self,
+    //     start_key: &[u8],
+    //     end_key: &[u8],
+    //     limit: i32,
+    // ) -> Result<Vec<KeyValue>> {
+    //     let iter = self.db.range(start_key..end_key);
+
+    //     let mut kvs = vec![];
+
+    //     for (count, kv) in iter.enumerate() {
+    //         if count >= limit as usize {
+    //             break;
+    //         }
+
+    //         let kv = kv.unwrap();
+
+    //         kvs.push(KeyValue {
+    //             key: kv.0.as_ref().to_owned(),
+    //             value: kv.1.as_ref().to_owned(),
+    //         });
+    //     }
+
+    //     Ok(kvs)
+    // }
+
+    pub fn take_snapshot(&self) -> Result<impl Iterator<Item = (String, bytes::Bytes)>> {
         info!("creat snapshot iterator ...");
 
         for i in self.db.iter() {
@@ -161,34 +106,95 @@ impl SledStore {
         })
     }
 
-    pub async fn install_snapshot(
-        &self,
-        entries: Vec<shard_install_snapshot_request::Entry>,
-    ) -> Result<()> {
+    pub fn install_snapshot(&self, entries: Vec<(String, bytes::Bytes)>) -> Result<()> {
         for ent in entries.iter() {
-            info!(
-                "install_snapshot, key: {:?}, value: {:?}",
-                ent.key, ent.value
-            );
+            info!("install_snapshot, key: {:?}, value: {:?}", ent.0, ent.1);
 
-            self.kv_set(&ent.key, &ent.value).await.inspect_err(|e| {
+            self.kv_set(&ent.0, ent.1.clone()).inspect_err(|e| {
                 error!(
                     "install_snapshot, kv_set failed, err: {e}, key: {:?}, value: {:?}",
-                    ent.key, ent.value
+                    ent.0, ent.1
                 )
             })?;
         }
 
         Ok(())
     }
+}
 
-    // pub async fn create_split_iter(
-    //     &self,
-    //     start_key: &[u8],
-    //     end_key: &[u8],
-    // ) -> Result<impl Iterator<Item = (Vec<u8>, Vec<u8>)>> {
-    //     Ok(StoreIter {
-    //         iter: self.db.range(start_key..end_key),
-    //     })
-    // }
+impl Clone for SledStore {
+    fn clone(&self) -> Self {
+        Self {
+            db: self.db.clone(),
+        }
+    }
+}
+
+impl KvStore for SledStore {
+    fn kv_get(&self, key: &str) -> Result<Option<bytes::Bytes>> {
+        let iv = self.db.get(key)?;
+        Ok(iv.map(|v| v.as_ref().to_owned().into()))
+    }
+
+    fn kv_set(&self, key: &str, value: bytes::Bytes) -> Result<()> {
+        self.db.insert(key, value.to_vec())?;
+        Ok(())
+    }
+
+    fn kv_delete(&self, key: &str) -> Result<Option<bytes::Bytes>> {
+        todo!()
+    }
+
+    fn kv_delete_range(&self, start_key: &str, _end_key: &str) -> Result<()> {
+        // FIXME:
+        let start_key: Vec<u8> = start_key.into();
+
+        loop {
+            let (key, _) = self.db.pop_max().unwrap().unwrap();
+            let key: Vec<u8> = key.as_ref().to_owned();
+            if key < start_key {
+                self.db.remove(key)?;
+                break;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn kv_get_prev(&self, key: &str) -> Result<Option<(String, bytes::Bytes)>> {
+        todo!()
+    }
+
+    fn kv_get_next(&self, key: &str) -> Result<Option<(String, bytes::Bytes)>> {
+        todo!()
+    }
+
+    fn kv_scan(&self, prefix: &str) -> Result<impl Iterator<Item = (String, bytes::Bytes)>> {
+        Ok(self.db.scan_prefix(prefix).filter_map(|x| {
+            x.ok().map(|(k, v)| {
+                (
+                    unsafe { String::from_utf8_unchecked(k.as_ref().to_owned()) },
+                    v.as_ref().to_owned().into(),
+                )
+            })
+        }))
+    }
+}
+
+pub struct StoreIter {
+    pub iter: sled::Iter,
+}
+
+impl Iterator for StoreIter {
+    type Item = (String, Bytes);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let item = self.iter.next()?.unwrap();
+        let (key, value) = item;
+
+        Some((
+            unsafe { String::from_utf8_unchecked(key.as_ref().to_owned()) },
+            value.as_ref().to_owned().into(),
+        ))
+    }
 }
