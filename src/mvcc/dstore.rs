@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use bytes::Bytes;
-use tracing::{error, info};
+use tracing::info;
 
 use crate::{
-    shard::{self, Shard, ShardError},
+    shard::{self, Shard},
     store::KvStore,
 };
 

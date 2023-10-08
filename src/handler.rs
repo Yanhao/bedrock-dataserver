@@ -5,7 +5,7 @@ use anyhow::Result;
 use futures::StreamExt;
 use futures_util::stream;
 use tonic::{Request, Response, Status, Streaming};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 use idl_gen::replog_pb;
 use idl_gen::service_pb::data_service_server::DataService;
@@ -21,8 +21,8 @@ use idl_gen::service_pb::{
 
 use crate::ds_client::CONNECTIONS;
 use crate::migrate_cache::ShardMigrateInfo;
-use crate::mvcc::{LockTable, MvccStore};
-use crate::shard::{self, Shard, ShardError, KV_RANGE_LIMIT, SHARD_MANAGER};
+use crate::mvcc::MvccStore;
+use crate::shard::{Shard, ShardError, KV_RANGE_LIMIT, SHARD_MANAGER};
 use crate::store::KvStore;
 use crate::{migrate_cache, param_check, utils};
 

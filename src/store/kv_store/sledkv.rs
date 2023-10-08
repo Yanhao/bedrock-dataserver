@@ -141,7 +141,7 @@ impl KvStore for SledStore {
         Ok(())
     }
 
-    fn kv_delete(&self, key: &str) -> Result<Option<bytes::Bytes>> {
+    fn kv_delete(&self, _key: &str) -> Result<Option<bytes::Bytes>> {
         todo!()
     }
 
@@ -161,11 +161,11 @@ impl KvStore for SledStore {
         Ok(())
     }
 
-    fn kv_get_prev(&self, key: &str) -> Result<Option<(String, bytes::Bytes)>> {
+    fn kv_get_prev(&self, _key: &str) -> Result<Option<(String, bytes::Bytes)>> {
         todo!()
     }
 
-    fn kv_get_next(&self, key: &str) -> Result<Option<(String, bytes::Bytes)>> {
+    fn kv_get_next(&self, _key: &str) -> Result<Option<(String, bytes::Bytes)>> {
         todo!()
     }
 

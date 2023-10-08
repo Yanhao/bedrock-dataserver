@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 
-use crate::shard::{self, Shard};
+use crate::shard::Shard;
 
 use super::{dstore::Dstore, lock_table::LockTable};
 

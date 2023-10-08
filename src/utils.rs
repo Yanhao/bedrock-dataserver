@@ -1,3 +1,3 @@
-pub fn common_prefix(a: &str, b: &str) -> String {
+pub fn common_prefix(_a: &str, _b: &str) -> String {
     todo!()
 }
