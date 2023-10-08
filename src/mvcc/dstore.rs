@@ -24,11 +24,11 @@ impl Dstore {
     }
 
     pub fn kv_get_prev(&self, key: &str) -> Result<Option<(String, Bytes)>> {
-        self.shard.kv_store.kv_get_prev(key)
+        self.shard.kv_store.kv_get_prev_or_eq(key)
     }
 
     pub fn kv_get_next(&self, key: &str) -> Result<Option<(String, Bytes)>> {
-        self.shard.kv_store.kv_get_next(key)
+        self.shard.kv_store.kv_get_next_or_eq(key)
     }
 
     pub async fn kv_set(&self, key: &str, value: Bytes) -> Result<()> {

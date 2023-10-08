@@ -20,8 +20,8 @@ pub trait KvStore: Clone {
     fn kv_delete(&self, key: &str) -> Result<Option<Bytes>>;
     fn kv_delete_range(&self, start_key: &str, _end_key: &str) -> Result<()>;
 
-    fn kv_get_prev(&self, key: &str) -> Result<Option<(String, Bytes)>>;
-    fn kv_get_next(&self, key: &str) -> Result<Option<(String, Bytes)>>;
+    fn kv_get_prev_or_eq(&self, key: &str) -> Result<Option<(String, Bytes)>>;
+    fn kv_get_next_or_eq(&self, key: &str) -> Result<Option<(String, Bytes)>>;
 
     fn kv_scan(&self, prefix: &str) -> Result<impl Iterator<Item = (String, Bytes)>>;
 }

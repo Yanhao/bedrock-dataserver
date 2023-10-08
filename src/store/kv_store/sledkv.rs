@@ -60,32 +60,6 @@ impl SledStore {
 }
 
 impl SledStore {
-    // pub async fn kv_scan(
-    //     &self,
-    //     start_key: &[u8],
-    //     end_key: &[u8],
-    //     limit: i32,
-    // ) -> Result<Vec<KeyValue>> {
-    //     let iter = self.db.range(start_key..end_key);
-
-    //     let mut kvs = vec![];
-
-    //     for (count, kv) in iter.enumerate() {
-    //         if count >= limit as usize {
-    //             break;
-    //         }
-
-    //         let kv = kv.unwrap();
-
-    //         kvs.push(KeyValue {
-    //             key: kv.0.as_ref().to_owned(),
-    //             value: kv.1.as_ref().to_owned(),
-    //         });
-    //     }
-
-    //     Ok(kvs)
-    // }
-
     pub fn take_snapshot(&self) -> Result<impl Iterator<Item = (String, bytes::Bytes)>> {
         info!("creat snapshot iterator ...");
 
@@ -141,8 +115,13 @@ impl KvStore for SledStore {
         Ok(())
     }
 
-    fn kv_delete(&self, _key: &str) -> Result<Option<bytes::Bytes>> {
-        todo!()
+    fn kv_delete(&self, key: &str) -> Result<Option<Bytes>> {
+        let a = self.db.remove(key)?;
+        if a.is_none() {
+            return Ok(None);
+        }
+
+        Ok(Some(Bytes::copy_from_slice(&a.unwrap())))
     }
 
     fn kv_delete_range(&self, start_key: &str, _end_key: &str) -> Result<()> {
@@ -161,12 +140,38 @@ impl KvStore for SledStore {
         Ok(())
     }
 
-    fn kv_get_prev(&self, _key: &str) -> Result<Option<(String, bytes::Bytes)>> {
-        todo!()
+    fn kv_get_prev_or_eq(&self, key: &str) -> Result<Option<(String, bytes::Bytes)>> {
+        if let Some(a) = self.kv_get(key)? {
+            return Ok(Some((key.to_string(), a)));
+        }
+
+        let a = self.db.get_lt(key)?;
+        if a.is_none() {
+            return Ok(None);
+        }
+        let a = a.unwrap();
+
+        return Ok(Some((
+            unsafe { String::from_utf8_unchecked(a.0.to_vec()) },
+            Bytes::copy_from_slice(&a.1),
+        )));
     }
 
-    fn kv_get_next(&self, _key: &str) -> Result<Option<(String, bytes::Bytes)>> {
-        todo!()
+    fn kv_get_next_or_eq(&self, key: &str) -> Result<Option<(String, bytes::Bytes)>> {
+        if let Some(a) = self.kv_get(key)? {
+            return Ok(Some((key.to_string(), a)));
+        }
+
+        let a = self.db.get_gt(key)?;
+        if a.is_none() {
+            return Ok(None);
+        }
+        let a = a.unwrap();
+
+        return Ok(Some((
+            unsafe { String::from_utf8_unchecked(a.0.to_vec()) },
+            Bytes::copy_from_slice(&a.1),
+        )));
     }
 
     fn kv_scan(&self, prefix: &str) -> Result<impl Iterator<Item = (String, bytes::Bytes)>> {

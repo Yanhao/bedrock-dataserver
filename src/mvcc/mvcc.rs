@@ -12,13 +12,16 @@ const TX_TABLE_KEY_PREFIX: &'static str = "/tx_ids/";
 struct Item {
     key: String,
     value: Vec<u8>,
+    timestamp: u64,
     version: u64,
+    tombstone: bool,
     commited: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct TxTableItem {
     tx_id: u64,
+    timestamp: u64,
     keys: Vec<KeyVersion>,
     lock_ids: Vec<String>,
 }
@@ -81,8 +84,10 @@ impl MvccStore {
                 return Ok(None);
             }
             let item: Item = serde_json::from_slice(&item.unwrap())?;
-
             if item.commited {
+                if item.tombstone {
+                    return Ok(None);
+                }
                 return Ok(Some(item.value.into()));
             }
 
@@ -102,7 +107,7 @@ impl MvccStore {
             .filter_map(|(key, item)| {
                 let item: Item = serde_json::from_slice(&item).unwrap(); // FIXME: remove this unwrap
 
-                if !item.commited || item.version > version {
+                if !item.commited || item.version > version || item.tombstone {
                     return None;
                 }
 
@@ -125,6 +130,8 @@ impl MvccStore {
                     key: key.to_string(),
                     version: tx_id,
                     value: value.to_vec(),
+                    timestamp: chrono::Utc::now().timestamp() as u64,
+                    tombstone: false,
                     commited: false,
                 })
                 .unwrap()
@@ -138,6 +145,47 @@ impl MvccStore {
                 &Self::make_tx_table_key(&tx_id.to_string()),
                 serde_json::to_vec(&TxTableItem {
                     tx_id,
+                    timestamp: chrono::Utc::now().timestamp() as u64,
+                    keys: vec![KeyVersion {
+                        key: key.to_string(),
+                        version: tx_id,
+                    }],
+                    lock_ids: vec![key.to_string()],
+                })
+                .unwrap()
+                .into(),
+            )
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn del_with_version(&self, tx_id: u64, key: &str) -> Result<()> {
+        self.locks.lock_record(key).await?;
+
+        self.dstore
+            .kv_set(
+                &Self::make_versioned_key(key, &tx_id.to_string()),
+                serde_json::to_vec(&Item {
+                    key: key.to_string(),
+                    version: tx_id,
+                    value: vec![],
+                    timestamp: chrono::Utc::now().timestamp() as u64,
+                    tombstone: true,
+                    commited: false,
+                })
+                .unwrap()
+                .into(),
+            )
+            .await?;
+
+        // FIXME:
+        self.dstore
+            .kv_set(
+                &Self::make_tx_table_key(&tx_id.to_string()),
+                serde_json::to_vec(&TxTableItem {
+                    tx_id,
+                    timestamp: chrono::Utc::now().timestamp() as u64,
                     keys: vec![KeyVersion {
                         key: key.to_string(),
                         version: tx_id,

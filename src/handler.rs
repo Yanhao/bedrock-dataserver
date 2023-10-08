@@ -11,12 +11,13 @@ use idl_gen::replog_pb;
 use idl_gen::service_pb::data_service_server::DataService;
 use idl_gen::service_pb::{
     migrate_shard_request, shard_lock_request, AbortTxRequest, AbortTxResponse, CommitTxRequest,
-    CommitTxResponse, CreateShardRequest, DeleteShardRequest, KeyValue, KvGetRequest,
-    KvGetResponse, KvScanRequest, KvScanResponse, KvSetRequest, KvSetResponse, MergeShardRequest,
-    MergeShardResponse, MigrateShardRequest, PrepareTxRequest, PrepareTxResponse,
-    ShardAppendLogRequest, ShardAppendLogResponse, ShardInfoRequest, ShardInfoResponse,
-    ShardInstallSnapshotRequest, ShardInstallSnapshotResponse, ShardLockRequest, ShardLockResponse,
-    SplitShardRequest, SplitShardResponse, TransferShardLeaderRequest, TransferShardLeaderResponse,
+    CommitTxResponse, CreateShardRequest, DeleteShardRequest, KeyValue, KvDelRequest,
+    KvDelResponse, KvGetRequest, KvGetResponse, KvScanRequest, KvScanResponse, KvSetRequest,
+    KvSetResponse, MergeShardRequest, MergeShardResponse, MigrateShardRequest, PrepareTxRequest,
+    PrepareTxResponse, ShardAppendLogRequest, ShardAppendLogResponse, ShardInfoRequest,
+    ShardInfoResponse, ShardInstallSnapshotRequest, ShardInstallSnapshotResponse, ShardLockRequest,
+    ShardLockResponse, SplitShardRequest, SplitShardResponse, TransferShardLeaderRequest,
+    TransferShardLeaderResponse,
 };
 
 use crate::ds_client::CONNECTIONS;
@@ -460,6 +461,44 @@ impl DataService for RealDataServer {
             .map_err(|_| Status::internal("commit_tx failed"))?;
 
         return Ok(Response::new(KvSetResponse {}));
+    }
+
+    async fn kv_del(&self, req: Request<KvDelRequest>) -> Result<Response<KvDelResponse>, Status> {
+        if !param_check::kv_del_param_check(req.get_ref()) {
+            return Err(Status::invalid_argument(""));
+        }
+
+        info!("kvdel, req: {:?}", req);
+        debug!("kvdel: key len: {}", req.get_ref().key.len());
+
+        let shard = self.get_shard(req.get_ref().shard_id).await?;
+        if !shard.is_leader() {
+            return Err(Status::unavailable("not leader"));
+        }
+
+        let key = &unsafe { String::from_utf8_unchecked(req.get_ref().key.clone()) };
+
+        let mvcc_store = MvccStore::new(shard);
+        let value = mvcc_store
+            .get_until_version(key, req.get_ref().txid)
+            .map_err(|_| Status::internal("get_util_version failed"))?;
+        if value.is_none() {
+            return Ok(Response::new(KvDelResponse { value: vec![] }));
+        }
+
+        mvcc_store
+            .del_with_version(req.get_ref().txid, key)
+            .await
+            .map_err(|_| Status::internal("del_with_version failed"))?;
+
+        mvcc_store
+            .commit_tx(req.get_ref().txid)
+            .await
+            .map_err(|_| Status::internal("commit_tx failed"))?;
+
+        return Ok(Response::new(KvDelResponse {
+            value: value.unwrap().to_vec(),
+        }));
     }
 
     async fn shard_lock(
