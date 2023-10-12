@@ -401,16 +401,13 @@ impl DataService for RealDataServer {
 
         let shard = self.get_shard(req.get_ref().shard_id).await?;
 
-        if shard.is_key_within_shard(&req.get_ref().start_key) {
+        if shard.is_key_within_shard(&req.get_ref().prefix) {
             return Err(Status::invalid_argument(""));
         }
 
         let kvs = MvccStore::new(shard.clone())
             .scan_util_version(
-                &utils::common_prefix(
-                    &unsafe { String::from_utf8_unchecked(req.get_ref().start_key.clone()) },
-                    &unsafe { String::from_utf8_unchecked(req.get_ref().end_key.clone()) },
-                ),
+                &unsafe { String::from_utf8_unchecked(req.get_ref().prefix.clone()) },
                 req.get_ref().txid,
                 KV_RANGE_LIMIT as usize,
             )
@@ -425,9 +422,7 @@ impl DataService for RealDataServer {
                     value: value.to_vec(),
                 })
                 .collect(),
-            no_left: shard.is_key_within_shard(&req.get_ref().start_key)
-                && shard.is_key_within_shard(&req.get_ref().end_key)
-                && kvs.is_empty(),
+            no_left: kvs.is_empty(),
         }));
     }
 
