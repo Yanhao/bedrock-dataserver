@@ -81,15 +81,12 @@ impl ShardManager {
             let key = kv.0.to_owned();
             let value = kv.1.to_owned();
 
-            new_shard.kv_store.kv_set(&key, value)?;
+            new_shard.kv_store.kv_set(key, value)?;
         }
 
         shard
             .kv_store
-            .kv_delete_range(
-                &unsafe { String::from_utf8_unchecked(start_key) },
-                &unsafe { String::from_utf8_unchecked(end_key) },
-            )
+            .kv_delete_range(start_key.into(), end_key.into())
             .unwrap();
 
         new_shard.start_role().await?;
@@ -107,7 +104,7 @@ impl ShardManager {
             let key = kv.0.to_owned();
             let value = kv.1.to_owned();
 
-            shard_a.kv_store.kv_set(&key, value)?;
+            shard_a.kv_store.kv_set(key, value)?;
         }
 
         shard_b.stop_role().await?;

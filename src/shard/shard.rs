@@ -122,7 +122,7 @@ impl Shard {
             buf
         };
 
-        sled_db.kv_set(SHARD_META_KEY, meta_buf.into())?;
+        sled_db.kv_set(SHARD_META_KEY.into(), meta_buf.into())?;
 
         Wal::create_wal_dir(shard_id).await?;
 
@@ -159,7 +159,7 @@ impl Shard {
 
         let mut meta_buf = Vec::new();
         meta.encode(&mut meta_buf).unwrap();
-        sled_db.kv_set(SHARD_META_KEY, meta_buf.into())?;
+        sled_db.kv_set(SHARD_META_KEY.into(), meta_buf.into())?;
 
         METADATA.write().put_shard(shard_id, meta.clone())?;
 
@@ -171,7 +171,7 @@ impl Shard {
     pub async fn load_shard(shard_id: u64) -> Result<Self> {
         let sled_db = SledStore::load(shard_id).await.unwrap();
 
-        let raw_meta = sled_db.kv_get(SHARD_META_KEY)?.unwrap();
+        let raw_meta = sled_db.kv_get(SHARD_META_KEY.into())?.unwrap();
         let meta = ShardMeta::decode(raw_meta).unwrap();
         let wal = Wal::load_wal_by_shard_id(shard_id).await?;
         info!("shard meta: {:?}", meta);
@@ -264,7 +264,7 @@ impl Shard {
         let mut meta_buf = Vec::new();
         self.shard_meta.read().encode(&mut meta_buf).unwrap();
         self.kv_store
-            .kv_set(SHARD_META_KEY, meta_buf.to_vec().into())?;
+            .kv_set(SHARD_META_KEY.into(), meta_buf.to_vec().into())?;
 
         METADATA
             .write()
@@ -313,7 +313,7 @@ impl Shard {
         &self,
         start_key: &[u8],
         end_key: &[u8],
-    ) -> Result<impl Iterator<Item = (String, Bytes)>> {
+    ) -> Result<impl Iterator<Item = (Bytes, Bytes)>> {
         Ok(kv_store::StoreIter {
             iter: self.kv_store.db.range(start_key..end_key),
         })
@@ -386,15 +386,11 @@ impl Shard {
         match op {
             Operation::Noop => unreachable!(),
             Operation::Set => {
-                self.kv_store.kv_set(
-                    &unsafe { String::from_utf8_unchecked(entry.key.clone()) },
-                    entry.value.clone().into(),
-                )?;
+                self.kv_store
+                    .kv_set(entry.key.clone().into(), entry.value.clone().into())?;
             }
             Operation::Del => {
-                return self
-                    .kv_store
-                    .kv_delete(&unsafe { String::from_utf8_unchecked(entry.key.clone()) });
+                return self.kv_store.kv_delete(entry.key.clone().into());
             }
         }
 

@@ -15,13 +15,13 @@ pub enum KvStoreError {
 }
 
 pub trait KvStore: Clone {
-    fn kv_get(&self, key: &str) -> Result<Option<Bytes>>;
-    fn kv_set(&self, key: &str, value: Bytes) -> Result<()>;
-    fn kv_delete(&self, key: &str) -> Result<Option<Bytes>>;
-    fn kv_delete_range(&self, start_key: &str, _end_key: &str) -> Result<()>;
+    fn kv_get(&self, key: Bytes) -> Result<Option<Bytes>>;
+    fn kv_set(&self, key: Bytes, value: Bytes) -> Result<()>;
+    fn kv_delete(&self, key: Bytes) -> Result<Option<Bytes>>;
+    fn kv_delete_range(&self, start_key: Bytes, _end_key: Bytes) -> Result<()>;
 
-    fn kv_get_prev_or_eq(&self, key: &str) -> Result<Option<(String, Bytes)>>;
-    fn kv_get_next_or_eq(&self, key: &str) -> Result<Option<(String, Bytes)>>;
+    fn kv_get_prev_or_eq(&self, key: Bytes) -> Result<Option<(Bytes, Bytes)>>;
+    fn kv_get_next_or_eq(&self, key: Bytes) -> Result<Option<(Bytes, Bytes)>>;
 
-    fn kv_scan(&self, prefix: &str) -> Result<impl Iterator<Item = (String, Bytes)>>;
+    fn kv_scan(&self, prefix: Bytes) -> Result<impl Iterator<Item = (Bytes, Bytes)>>;
 }

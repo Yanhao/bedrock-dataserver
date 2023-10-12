@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use serde::{Deserialize, Serialize};
 
 use crate::shard::Shard;
@@ -10,7 +10,7 @@ const TX_TABLE_KEY_PREFIX: &'static str = "/tx_ids/";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Item {
-    key: String,
+    key: Vec<u8>,
     value: Vec<u8>,
     timestamp: u64,
     version: u64,
@@ -23,12 +23,12 @@ struct TxTableItem {
     tx_id: u64,
     timestamp: u64,
     keys: Vec<KeyVersion>,
-    lock_ids: Vec<String>,
+    lock_ids: Vec<Vec<u8>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct KeyVersion {
-    key: String,
+    key: Vec<u8>,
     version: u64,
 }
 
@@ -39,18 +39,27 @@ pub struct MvccStore {
 }
 
 impl MvccStore {
-    fn make_tx_table_key(key: &str) -> String {
-        format!("{TX_TABLE_KEY_PREFIX}{key}")
+    fn make_tx_table_key(txid: u64) -> Bytes {
+        let mut b = BytesMut::new();
+        b.extend_from_slice(TX_TABLE_KEY_PREFIX.as_bytes());
+        b.extend_from_slice(format!("/{txid}").as_bytes());
+        b.freeze()
     }
 
-    fn make_versioned_key(key: &str, version_str: &str) -> String {
-        format!("{key}@{version_str}")
+    fn make_versioned_key(key: Bytes, version: u64) -> Bytes {
+        let mut b = BytesMut::new();
+        b.extend_from_slice(&key);
+        b.extend_from_slice(format!("@{version}").as_bytes());
+        b.freeze()
     }
 
-    async fn commit_version(&self, key: &str, version: u64) -> Result<()> {
-        let key = Self::make_versioned_key(key, &version.to_string());
+    async fn commit_version(&self, key: Bytes, version: u64) -> Result<()> {
+        let key = Self::make_versioned_key(key, version);
 
-        let item = self.dstore.kv_get(&key)?.ok_or(anyhow!("no such key"))?;
+        let item = self
+            .dstore
+            .kv_get(key.clone())?
+            .ok_or(anyhow!("no such key"))?;
 
         let mut item: Item = serde_json::from_slice(&item)?;
 
@@ -58,7 +67,7 @@ impl MvccStore {
 
         let _ = self
             .dstore
-            .kv_set(&key, serde_json::to_vec(&item)?.into())
+            .kv_set(key, serde_json::to_vec(&item)?.into())
             .await?;
 
         Ok(())
@@ -75,11 +84,14 @@ impl MvccStore {
         }
     }
 
-    pub fn get_until_version(&self, key: &str, version: u64) -> Result<Option<Bytes>> {
-        let mut key = Self::make_versioned_key(key, &version.to_string());
+    pub fn get_until_version(&self, key: Bytes, version: u64) -> Result<Option<Bytes>> {
+        let mut key = Self::make_versioned_key(key, version);
 
         loop {
-            let item = self.dstore.kv_get_prev(&key)?.map(|(_k, v)| v.clone());
+            let item = self
+                .dstore
+                .kv_get_prev(key.clone())?
+                .map(|(_k, v)| v.clone());
             if item.is_none() {
                 return Ok(None);
             }
@@ -91,16 +103,16 @@ impl MvccStore {
                 return Ok(Some(item.value.into()));
             }
 
-            key = Self::make_versioned_key(&item.key, &item.version.to_string())
+            key = Self::make_versioned_key(item.key.into(), item.version)
         }
     }
 
     pub fn scan_util_version(
         &self,
-        prefix: &str,
+        prefix: Bytes,
         version: u64,
         limit: usize,
-    ) -> Result<Vec<(String, Bytes)>> {
+    ) -> Result<Vec<(Bytes, Bytes)>> {
         Ok(self
             .dstore
             .kv_scan(prefix)?
@@ -120,14 +132,14 @@ impl MvccStore {
 
 // for write
 impl MvccStore {
-    pub async fn set_with_version(&self, tx_id: u64, key: &str, value: Bytes) -> Result<()> {
-        self.locks.lock_record(key).await?;
+    pub async fn set_with_version(&self, tx_id: u64, key: Bytes, value: Bytes) -> Result<()> {
+        self.locks.lock_record(key.clone()).await?;
 
         self.dstore
             .kv_set(
-                &Self::make_versioned_key(key, &tx_id.to_string()),
+                Self::make_versioned_key(key.clone(), tx_id),
                 serde_json::to_vec(&Item {
-                    key: key.to_string(),
+                    key: key.to_vec(),
                     version: tx_id,
                     value: value.to_vec(),
                     timestamp: chrono::Utc::now().timestamp() as u64,
@@ -142,15 +154,15 @@ impl MvccStore {
         // FIXME:
         self.dstore
             .kv_set(
-                &Self::make_tx_table_key(&tx_id.to_string()),
+                Self::make_tx_table_key(tx_id),
                 serde_json::to_vec(&TxTableItem {
                     tx_id,
                     timestamp: chrono::Utc::now().timestamp() as u64,
                     keys: vec![KeyVersion {
-                        key: key.to_string(),
+                        key: key.to_vec(),
                         version: tx_id,
                     }],
-                    lock_ids: vec![key.to_string()],
+                    lock_ids: vec![key.to_vec()],
                 })
                 .unwrap()
                 .into(),
@@ -160,14 +172,14 @@ impl MvccStore {
         Ok(())
     }
 
-    pub async fn del_with_version(&self, tx_id: u64, key: &str) -> Result<()> {
-        self.locks.lock_record(key).await?;
+    pub async fn del_with_version(&self, tx_id: u64, key: Bytes) -> Result<()> {
+        self.locks.lock_record(key.clone()).await?;
 
         self.dstore
             .kv_set(
-                &Self::make_versioned_key(key, &tx_id.to_string()),
+                Self::make_versioned_key(key.clone(), tx_id),
                 serde_json::to_vec(&Item {
-                    key: key.to_string(),
+                    key: key.to_vec(),
                     version: tx_id,
                     value: vec![],
                     timestamp: chrono::Utc::now().timestamp() as u64,
@@ -182,15 +194,15 @@ impl MvccStore {
         // FIXME:
         self.dstore
             .kv_set(
-                &Self::make_tx_table_key(&tx_id.to_string()),
+                Self::make_tx_table_key(tx_id),
                 serde_json::to_vec(&TxTableItem {
                     tx_id,
                     timestamp: chrono::Utc::now().timestamp() as u64,
                     keys: vec![KeyVersion {
-                        key: key.to_string(),
+                        key: key.to_vec(),
                         version: tx_id,
                     }],
-                    lock_ids: vec![key.to_string()],
+                    lock_ids: vec![key.to_vec()],
                 })
                 .unwrap()
                 .into(),
@@ -203,17 +215,18 @@ impl MvccStore {
     pub async fn commit_tx(&self, tx_id: u64) -> Result<()> {
         let tx_table = self
             .dstore
-            .kv_get(&Self::make_tx_table_key(&tx_id.to_string()))?
+            .kv_get(Self::make_tx_table_key(tx_id))?
             .ok_or(anyhow!("no such tx_id"))?;
 
         let tx_table: TxTableItem = serde_json::from_slice(&tx_table)?;
 
         for i in tx_table.keys.iter() {
-            self.commit_version(&i.key, i.version).await?;
+            self.commit_version(Bytes::from(i.key.clone()), i.version)
+                .await?;
         }
 
         for id in tx_table.lock_ids.iter() {
-            self.locks.unlock(id).await?;
+            self.locks.unlock(Bytes::from(id.clone())).await?;
         }
 
         Ok(())
@@ -222,14 +235,14 @@ impl MvccStore {
     pub async fn abort_tx(&self, tx_id: u64) -> Result<()> {
         let tx_table = self
             .dstore
-            .kv_delete(&Self::make_tx_table_key(&tx_id.to_string()))
+            .kv_delete(Self::make_tx_table_key(tx_id))
             .await?
             .ok_or(anyhow!("no such tx_id"))?;
 
         let tx_table: TxTableItem = serde_json::from_slice(&tx_table)?;
 
         for id in tx_table.lock_ids.iter() {
-            self.locks.unlock(id).await?;
+            self.locks.unlock(Bytes::from(id.clone())).await?;
         }
 
         Ok(())
@@ -238,11 +251,11 @@ impl MvccStore {
 
 // for locks
 impl MvccStore {
-    pub async fn lock_record(&self, key: &str) -> Result<()> {
+    pub async fn lock_record(&self, key: Bytes) -> Result<()> {
         self.locks.lock_record(key).await
     }
 
-    pub async fn lock_range(&self, start: &str, end: &str) -> Result<()> {
+    pub async fn lock_range(&self, start: Bytes, end: Bytes) -> Result<()> {
         self.locks.lock_range(start, end).await
     }
 }

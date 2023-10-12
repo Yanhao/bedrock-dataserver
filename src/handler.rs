@@ -192,12 +192,7 @@ impl DataService for RealDataServer {
                     piece
                         .entries
                         .into_iter()
-                        .map(|e| {
-                            (
-                                unsafe { String::from_utf8_unchecked(e.key) },
-                                e.value.into(),
-                            )
-                        })
+                        .map(|e| (e.key.into(), e.value.into()))
                         .collect(),
                 )
                 .unwrap();
@@ -317,10 +312,7 @@ impl DataService for RealDataServer {
                 for kv in piece.entries.into_iter() {
                     shard
                         .kv_store
-                        .kv_set(
-                            &unsafe { String::from_utf8_unchecked(kv.key) },
-                            kv.value.to_vec().into(),
-                        )
+                        .kv_set(kv.key.into(), kv.value.to_vec().into())
                         .unwrap();
                 }
             }
@@ -379,10 +371,7 @@ impl DataService for RealDataServer {
         let shard = self.get_shard(req.get_ref().shard_id).await?;
 
         let value = MvccStore::new(shard)
-            .get_until_version(
-                &unsafe { String::from_utf8_unchecked(req.get_ref().key.clone()) },
-                req.get_ref().txid,
-            )
+            .get_until_version(req.get_ref().key.clone().into(), req.get_ref().txid)
             .map_err(|_| Status::not_found("no such key"))?
             .ok_or(Status::not_found("not such key"))?;
 
@@ -407,7 +396,7 @@ impl DataService for RealDataServer {
 
         let kvs = MvccStore::new(shard.clone())
             .scan_util_version(
-                &unsafe { String::from_utf8_unchecked(req.get_ref().prefix.clone()) },
+                req.get_ref().prefix.clone().into(),
                 req.get_ref().txid,
                 KV_RANGE_LIMIT as usize,
             )
@@ -444,7 +433,7 @@ impl DataService for RealDataServer {
         mvcc_store
             .set_with_version(
                 req.get_ref().txid,
-                &unsafe { String::from_utf8_unchecked(req.get_ref().key.clone()) },
+                req.get_ref().key.clone().into(),
                 req.get_ref().value.clone().into(),
             )
             .await
@@ -471,18 +460,18 @@ impl DataService for RealDataServer {
             return Err(Status::unavailable("not leader"));
         }
 
-        let key = &unsafe { String::from_utf8_unchecked(req.get_ref().key.clone()) };
+        let key = req.get_ref().key.clone();
 
         let mvcc_store = MvccStore::new(shard);
         let value = mvcc_store
-            .get_until_version(key, req.get_ref().txid)
+            .get_until_version(key.clone().into(), req.get_ref().txid)
             .map_err(|_| Status::internal("get_util_version failed"))?;
         if value.is_none() {
             return Ok(Response::new(KvDelResponse { value: vec![] }));
         }
 
         mvcc_store
-            .del_with_version(req.get_ref().txid, key)
+            .del_with_version(req.get_ref().txid, key.into())
             .await
             .map_err(|_| Status::internal("del_with_version failed"))?;
 
@@ -518,16 +507,13 @@ impl DataService for RealDataServer {
         match lock {
             shard_lock_request::Lock::Record(l) => {
                 mvcc_store
-                    .lock_record(&unsafe { String::from_utf8_unchecked(l) })
+                    .lock_record(l.into())
                     .await
                     .map_err(|_| Status::internal("lock failed"))?;
             }
             shard_lock_request::Lock::Range(l) => {
                 mvcc_store
-                    .lock_range(
-                        &unsafe { String::from_utf8_unchecked(l.start_key) },
-                        &unsafe { String::from_utf8_unchecked(l.end_key) },
-                    )
+                    .lock_range(l.start_key.into(), l.end_key.into())
                     .await
                     .map_err(|_| Status::internal("lock failed"))?;
             }
@@ -555,7 +541,7 @@ impl DataService for RealDataServer {
             mvcc_store
                 .set_with_version(
                     req.get_ref().txid,
-                    &unsafe { String::from_utf8_unchecked(kv.key.clone()) },
+                    kv.key.clone().into(),
                     kv.value.clone().into(),
                 )
                 .await

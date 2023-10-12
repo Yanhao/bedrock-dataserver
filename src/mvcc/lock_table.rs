@@ -1,5 +1,5 @@
 use anyhow::{bail, Result};
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 
 use super::dstore::Dstore;
 
@@ -15,16 +15,20 @@ impl LockTable {
         Self { dstore: s }
     }
 
-    fn make_lock_key(orig_key: &str) -> String {
-        format!("{LOCK_KEY_PREFIX}{orig_key}")
+    fn make_lock_key(orig_key: Bytes) -> Bytes {
+        let mut b = BytesMut::new();
+        b.extend_from_slice(LOCK_KEY_PREFIX.as_bytes());
+        b.extend_from_slice("/".as_bytes());
+        b.extend_from_slice(&orig_key);
+        b.freeze()
     }
 
-    pub async fn lock_record(&self, key: &str) -> Result<()> {
+    pub async fn lock_record(&self, key: Bytes) -> Result<()> {
         let key = &Self::make_lock_key(key);
 
-        let l = self.dstore.kv_get_prev(key)?;
+        let l = self.dstore.kv_get_prev(key.clone())?;
         if l.is_none() {
-            self.dstore.kv_set(key, Bytes::new()).await?;
+            self.dstore.kv_set(key.clone(), Bytes::new()).await?;
 
             return Ok(());
         }
@@ -38,20 +42,20 @@ impl LockTable {
             bail!("lock failed");
         }
 
-        self.dstore.kv_set(key, Bytes::new()).await?;
+        self.dstore.kv_set(key.clone(), Bytes::new()).await?;
 
         Ok(())
     }
 
-    pub async fn lock_range(&self, start: &str, end: &str) -> Result<()> {
+    pub async fn lock_range(&self, start: Bytes, end: Bytes) -> Result<()> {
         let (start, end) = (&Self::make_lock_key(start), &Self::make_lock_key(end));
 
-        let lprev = self.dstore.kv_get_prev(start)?;
-        let lnext = self.dstore.kv_get_next(start)?;
+        let lprev = self.dstore.kv_get_prev(start.clone())?;
+        let lnext = self.dstore.kv_get_next(start.clone())?;
 
         if lprev.is_none() && lnext.is_none() {
             self.dstore
-                .kv_set(start, end.as_bytes().to_vec().into())
+                .kv_set(start.clone(), end.clone().to_vec().into())
                 .await?;
 
             return Ok(());
@@ -70,14 +74,14 @@ impl LockTable {
         }
 
         self.dstore
-            .kv_set(start, end.as_bytes().to_vec().into())
+            .kv_set(start.clone(), end.clone().to_vec().into())
             .await?;
 
         Ok(())
     }
 
-    pub async fn unlock(&self, key: &str) -> Result<()> {
-        let _ = self.dstore.kv_delete(&Self::make_lock_key(key)).await?;
+    pub async fn unlock(&self, key: Bytes) -> Result<()> {
+        let _ = self.dstore.kv_delete(Self::make_lock_key(key)).await?;
 
         Ok(())
     }

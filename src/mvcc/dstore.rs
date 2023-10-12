@@ -19,22 +19,22 @@ impl Dstore {
         Self { shard }
     }
 
-    pub fn kv_get(&self, key: &str) -> Result<Option<Bytes>> {
+    pub fn kv_get(&self, key: Bytes) -> Result<Option<Bytes>> {
         self.shard.kv_store.kv_get(key)
     }
 
-    pub fn kv_get_prev(&self, key: &str) -> Result<Option<(String, Bytes)>> {
+    pub fn kv_get_prev(&self, key: Bytes) -> Result<Option<(Bytes, Bytes)>> {
         self.shard.kv_store.kv_get_prev_or_eq(key)
     }
 
-    pub fn kv_get_next(&self, key: &str) -> Result<Option<(String, Bytes)>> {
+    pub fn kv_get_next(&self, key: Bytes) -> Result<Option<(Bytes, Bytes)>> {
         self.shard.kv_store.kv_get_next_or_eq(key)
     }
 
-    pub async fn kv_set(&self, key: &str, value: Bytes) -> Result<()> {
+    pub async fn kv_set(&self, key: Bytes, value: Bytes) -> Result<()> {
         let mut entry_with_notifier = self
             .shard
-            .process_write(shard::Operation::Set, key.as_bytes(), &value.to_vec())
+            .process_write(shard::Operation::Set, &key, &value.to_vec())
             .await?;
 
         info!("start wait result");
@@ -44,10 +44,10 @@ impl Dstore {
         Ok(())
     }
 
-    pub async fn kv_delete(&self, key: &str) -> Result<Option<Bytes>> {
+    pub async fn kv_delete(&self, key: Bytes) -> Result<Option<Bytes>> {
         let mut entry_with_notifier = self
             .shard
-            .process_write(shard::Operation::Del, key.as_bytes(), &vec![])
+            .process_write(shard::Operation::Del, &key, &vec![])
             .await?;
 
         info!("start wait result");
@@ -56,10 +56,7 @@ impl Dstore {
         self.shard.apply_entry(&entry_with_notifier.entry).await
     }
 
-    pub fn kv_scan<'a>(
-        &'a self,
-        prefix: &'a str,
-    ) -> Result<impl Iterator<Item = (String, Bytes)> + 'a> {
+    pub fn kv_scan(&self, prefix: Bytes) -> Result<impl Iterator<Item = (Bytes, Bytes)> + '_> {
         self.shard.kv_store.kv_scan(prefix)
     }
 }

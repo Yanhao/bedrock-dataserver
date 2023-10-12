@@ -3,10 +3,10 @@ use std::net::{AddrParseError, SocketAddr};
 use tracing::warn;
 
 use idl_gen::service_pb::{
-    AbortTxRequest, CommitTxRequest, CreateShardRequest, DeleteShardRequest, KvGetRequest,
-    KvScanRequest, KvSetRequest, MergeShardRequest, MigrateShardRequest, ShardAppendLogRequest,
-    ShardInfoRequest, ShardInstallSnapshotRequest, ShardLockRequest, SplitShardRequest,
-    TransferShardLeaderRequest, PrepareTxRequest, KvDelRequest,
+    AbortTxRequest, CommitTxRequest, CreateShardRequest, DeleteShardRequest, KvDelRequest,
+    KvGetRequest, KvScanRequest, KvSetRequest, MergeShardRequest, MigrateShardRequest,
+    PrepareTxRequest, ShardAppendLogRequest, ShardInfoRequest, ShardInstallSnapshotRequest,
+    ShardLockRequest, SplitShardRequest, TransferShardLeaderRequest,
 };
 
 pub fn create_shard_param_check(req: &CreateShardRequest) -> bool {
