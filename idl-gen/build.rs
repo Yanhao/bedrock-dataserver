@@ -1,8 +1,6 @@
 fn main() {
     prost_build::compile_protos(
         &[
-            "../proto/message.proto",
-            "../proto/wal.proto",
             "../proto/replog.proto",
         ],
         &["../"],
