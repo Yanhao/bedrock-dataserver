@@ -25,7 +25,7 @@ use crate::migrate_cache::ShardMigrateInfo;
 use crate::mvcc::MvccStore;
 use crate::shard::{Shard, ShardError, KV_RANGE_LIMIT, SHARD_MANAGER};
 use crate::store::KvStore;
-use crate::{migrate_cache, param_check, utils};
+use crate::{migrate_cache, param_check};
 
 #[derive(Debug, Default)]
 pub struct RealDataServer {}

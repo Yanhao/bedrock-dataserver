@@ -13,7 +13,7 @@ use tracing::{debug, error, info};
 
 use idl_gen::service_pb::data_service_server::DataServiceServer;
 
-use dataserver::config::{config_mod_init, CONFIG, CONFIG_DIR};
+use dataserver::config::{init_config, CONFIG, DEFAULT_CONFIG_FILE};
 use dataserver::format::Formatter;
 use dataserver::handler::RealDataServer;
 
@@ -34,7 +34,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // console_subscriber::init();
     tracing_subscriber::fmt::init();
 
-    let default_config_file = format!("{}/{}", CONFIG_DIR, "dataserver.toml");
     let app = App::new("DataServer")
         .version("0.0.1")
         .author("Yanhao Mo <yanhaocs@gmail.com>")
@@ -43,7 +42,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Arg::with_name("config file")
                 .short("c")
                 .long("config")
-                .default_value(&default_config_file)
+                .default_value(DEFAULT_CONFIG_FILE)
                 .help("Specify configuration file location"),
         )
         .arg(
@@ -85,7 +84,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config_file = matches.value_of("config file").unwrap();
     debug!("config file: {}", config_file);
 
-    if let Err(e) = config_mod_init(config_file) {
+    if let Err(e) = init_config(config_file) {
         error!("failed to initialize configuration, err: {}", e);
         return Ok(());
     }

@@ -10,7 +10,7 @@ use tracing::{debug, error, info};
 use crate::error::DataServerError;
 
 // the location of dataserver configuration directory.
-pub const CONFIG_DIR: &str = "/etc/bedrock-dataserver";
+pub const DEFAULT_CONFIG_FILE: &str = "/etc/bedrock/dataserver.toml";
 
 static HOST_IP: Lazy<IpAddr> = Lazy::new(|| get_if_addrs().unwrap()[0].addr.ip());
 pub static CONFIG: Lazy<parking_lot::RwLock<Configuration>> = Lazy::new(Default::default);
@@ -62,17 +62,17 @@ impl Configuration {
 
         SocketAddr::new(*HOST_IP, addr.port())
     }
+
+    fn validate(&self) -> Result<()> {
+        Ok(())
+    }
 }
 
-fn validate_configuration(_config: &Configuration) -> Result<()> {
-    Ok(())
-}
-
-pub fn config_mod_init(config_file: &str) -> Result<()> {
+pub fn init_config(config_file: &str) -> Result<()> {
     let conf = Configuration::parse_config_file(config_file)
         .inspect_err(|e| error!("failed to initialize config module, err: {e}"))?;
 
-    validate_configuration(&conf)?;
+    conf.validate()?;
 
     *CONFIG.write() = conf;
 
