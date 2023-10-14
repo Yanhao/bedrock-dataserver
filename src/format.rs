@@ -2,6 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{ensure, Result};
+use tracing::info;
 // use rocksdb::{Options, DB};
 
 // use crate::meta::MetaData;
@@ -23,6 +24,8 @@ impl Formatter {
     }
 
     pub fn format(&self) -> std::io::Result<()> {
+        info!("formatting...");
+
         fs::create_dir(self.directory.join("log"))?;
         fs::create_dir(self.directory.join("meta"))?;
         fs::create_dir(self.directory.join("journal"))?;
@@ -43,6 +46,8 @@ impl Formatter {
 
         // let _ = DB::destroy(&Options::default(), &meta_path);
         // .unwrap();
+
+        info!("successfully formatted {:?}!", self.directory.as_os_str());
 
         Ok(())
     }

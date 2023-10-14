@@ -6,10 +6,10 @@ use std::env::set_current_dir;
 use std::path::Path;
 
 use anyhow::Result;
-use clap::{App, Arg};
+use clap::Parser;
 use tokio::signal;
 use tonic::transport::Server as GrpcServer;
-use tracing::{debug, error, info};
+use tracing::{error, info};
 
 use idl_gen::service_pb::data_service_server::DataServiceServer;
 
@@ -29,94 +29,62 @@ fn create_lock_file(path: impl AsRef<Path>) -> Result<()> {
     Ok(())
 }
 
+fn format_dir(dir: &str) -> Result<()> {
+    let f =
+        Formatter::new(dir).inspect_err(|e| error!("failed to create new formatter, err: {e}"))?;
+    f.format()
+        .inspect_err(|e| error!("failed to format {dir}, err: {e}"))?;
+
+    Ok(())
+}
+
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    #[arg(short, long, default_value_t = DEFAULT_CONFIG_FILE.to_string())]
+    config: String,
+    #[arg(short, long, default_value_t = false)]
+    format: bool,
+    #[arg(long)]
+    format_dir: String,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // console_subscriber::init();
     tracing_subscriber::fmt::init();
 
-    let app = App::new("DataServer")
-        .version("0.0.1")
-        .author("Yanhao Mo <yanhaocs@gmail.com>")
-        .about("A practice project for distributed storage system")
-        .arg(
-            Arg::with_name("config file")
-                .short("c")
-                .long("config")
-                .default_value(DEFAULT_CONFIG_FILE)
-                .help("Specify configuration file location"),
-        )
-        .arg(
-            Arg::with_name("format directory")
-                .short("f")
-                .long("format")
-                .takes_value(true)
-                .help("Format data directory"),
-        );
-
-    let matches = app.get_matches();
-    if matches.is_present("format directory") {
-        println!("formatting...");
-
-        let f = match Formatter::new(matches.value_of("format directory").unwrap()) {
-            Err(e) => {
-                eprintln!("failed to create new formatter, err: {}", e);
-                return Ok(());
-            }
-            Ok(v) => v,
-        };
-
-        if let Err(e) = f.format() {
-            eprintln!(
-                "failed to format {}, err: {}",
-                matches.value_of("format directory").unwrap(),
-                e
-            );
-        } else {
-            println!(
-                "successfully formatted {}!",
-                matches.value_of("format directory").unwrap(),
-            );
-        }
-        return Ok(());
+    let args = Args::parse();
+    if args.format {
+        format_dir(&args.format_dir)?;
+        std::process::exit(0);
     }
 
     info!("starting dataserver...");
-    let config_file = matches.value_of("config file").unwrap();
-    debug!("config file: {}", config_file);
-
-    if let Err(e) = init_config(config_file) {
-        error!("failed to initialize configuration, err: {}", e);
-        return Ok(());
-    }
+    init_config(&args.config)
+        .inspect_err(|e| error!("failed to initialize configuration, err: {e}"))?;
 
     let work_dir = CONFIG.read().work_directory.as_ref().unwrap().to_owned();
     set_current_dir(&work_dir)?;
-    info!("change working directory to {}/", &work_dir);
+    info!("change working directory to {work_dir}/");
 
-    if let Err(e) = create_lock_file(&work_dir) {
-        error!("failed to create lock file, err: {}", e);
-        info!("maybe there is another server already running");
-        return Ok(());
-    }
+    create_lock_file(&work_dir).inspect_err(|e| error!("failed to create lock file, err: {e}"))?;
 
     dataserver::start_background_tasks().await;
 
     let grpc_server_addr = CONFIG.read().rpc_server_addr.as_ref().unwrap().parse()?;
-    let grpc_server =
-        GrpcServer::builder().add_service(DataServiceServer::new(RealDataServer::default()));
-
     tokio::spawn(async move {
+        let grpc_server =
+            GrpcServer::builder().add_service(DataServiceServer::new(RealDataServer::default()));
         info!("starting data rpc server...");
         grpc_server.serve(grpc_server_addr).await.unwrap();
         info!("stop grpc server");
     });
 
     signal::ctrl_c().await?;
-
     info!("ctrl-c pressed");
-    if let Err(e) = std::fs::remove_file(format!("{work_dir}/LOCK")) {
-        error!("failed to remove lock file, err {}", e);
-    }
+
+    std::fs::remove_file(format!("{work_dir}/LOCK"))
+        .inspect_err(|e| error!("failed to remove lock file, err {e}"))?;
 
     Ok(())
 }

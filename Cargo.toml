@@ -9,7 +9,7 @@ edition = "2021"
 [dependencies]
 thiserror = "1.0"
 chrono = "0.4"
-clap = "2.0"
+clap =  { version = "4", features = ["derive"] }
 anyhow = "1.0"
 # raft = { git = "https://github.com/tikv/raft-rs", version = "0.6.0-alpha", default-features = false, features = ["prost-codec", "default-logger"] }
 raft = { version = "0.6", default-features = false, features = ["prost-codec", "default-logger"] }
