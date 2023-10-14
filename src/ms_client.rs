@@ -1,17 +1,36 @@
+use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::sync::Arc;
+
 use anyhow::Result;
+use arc_swap::ArcSwapOption;
 use futures_util::stream;
-use once_cell::sync::Lazy;
+use idl_gen::metaserver_pb::meta_service_client::MetaServiceClient;
+use tokio::sync::OnceCell;
+use tokio::{select, sync::mpsc, time::MissedTickBehavior};
+use tonic::transport::Channel;
 use tracing::{debug, info, warn};
 
 use idl_gen::metaserver_pb::sync_shard_in_data_server_request::SyncShardInfo;
-use idl_gen::metaserver_pb::{meta_service_client, HeartBeatRequest, SyncShardInDataServerRequest};
+use idl_gen::metaserver_pb::{HeartBeatRequest, InfoRequest, SyncShardInDataServerRequest};
 use idl_gen::service_pb::ShardMeta;
 
 use crate::config::CONFIG;
 use crate::metadata::METADATA;
 use crate::metadata::{Meta, ShardMetaIter};
+use crate::utils::{A, R};
 
-pub static MS_CLIENT: Lazy<MsClient> = Lazy::new(MsClient::new);
+pub static MS_CLIENT: OnceCell<MsClient> = OnceCell::const_new();
+pub async fn get_ms_client() -> &'static MsClient {
+    MS_CLIENT
+        .get_or_init(|| async {
+            let mut ms_client = MsClient::new();
+            ms_client.start().await.unwrap();
+
+            ms_client
+        })
+        .await
+}
 
 struct SyncShardIter<T>
 where
@@ -71,24 +90,93 @@ impl Iterator for SyncShardIter<ShardMetaIter> {
     }
 }
 
-pub struct MsClient {}
+pub struct MsClient {
+    leader_conn: Arc<ArcSwapOption<(SocketAddr, MetaServiceClient<Channel>)>>,
+    follower_conns: Arc<parking_lot::RwLock<HashMap<SocketAddr, MetaServiceClient<Channel>>>>,
+
+    stop_ch: Option<mpsc::Sender<()>>,
+}
 
 impl MsClient {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            leader_conn: Arc::new(None.into()),
+            follower_conns: Arc::new(parking_lot::RwLock::new(HashMap::new())),
+
+            stop_ch: None,
+        }
     }
 
-    fn get_ms_addr(&self) -> String {
-        let meta = METADATA.read().get_meta();
+    async fn update_ms_conns(
+        leader_conn: Arc<ArcSwapOption<(SocketAddr, MetaServiceClient<Channel>)>>,
+        follower_conns: Arc<parking_lot::RwLock<HashMap<SocketAddr, MetaServiceClient<Channel>>>>,
+    ) -> Result<()> {
+        let (addr, mut conn) = (*leader_conn.load().r().clone()).clone();
+        let resp = conn.info(InfoRequest {}).await?.into_inner();
 
-        meta.metaserver_leader
+        let leader_addr = resp.leader_addr.parse().unwrap();
+        if leader_addr != addr {
+            let conn = MetaServiceClient::connect(resp.leader_addr).await?;
+            leader_conn.s((leader_addr, conn));
+        }
+
+        let mut new_follower_conns = follower_conns
+            .read()
+            .clone()
+            .into_iter()
+            .filter(|(addr, _)| resp.follower_addrs.contains(&addr.to_string()))
+            .collect::<HashMap<_, _>>();
+
+        for addr in resp.follower_addrs.into_iter() {
+            let socket = addr.parse().unwrap();
+            if !new_follower_conns.contains_key(&socket) {
+                new_follower_conns.insert(socket, MetaServiceClient::connect(addr).await?);
+            }
+        }
+
+        *follower_conns.write() = new_follower_conns;
+
+        Ok(())
     }
 
+    pub async fn start(&mut self) -> Result<()> {
+        let (tx, mut rx) = mpsc::channel(1);
+        self.stop_ch.replace(tx);
+
+        let leader_conn = self.leader_conn.clone();
+        let follower_conns = self.follower_conns.clone();
+
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(tokio::time::Duration::from_secs(10));
+            ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
+
+            loop {
+                select! {
+                    _ = rx.recv() => {
+                        break;
+                    }
+                    _ = ticker.tick() => {
+                        let _ = Self::update_ms_conns(leader_conn.clone(), follower_conns.clone()).await;
+                    }
+                }
+            }
+        });
+
+        Ok(())
+    }
+
+    pub async fn stop(&mut self) -> Result<()> {
+        if let Some(s) = self.stop_ch.as_ref() {
+            s.send(()).await?;
+        }
+
+        Ok(())
+    }
+}
+
+impl MsClient {
     pub async fn heartbeat(&self, _restarting: bool) -> Result<()> {
-        let addr = self.get_ms_addr();
-
-        info!("heartbeat to metaserver ... metaserver_addr: {}", addr);
-        let mut client = meta_service_client::MetaServiceClient::connect(addr.clone()).await?;
+        let (_, mut client) = (*self.leader_conn.load().r().clone()).clone();
 
         let req = tonic::Request::new(HeartBeatRequest {
             addr: CONFIG.read().get_self_socket_addr().to_string(),
@@ -103,17 +191,15 @@ impl MsClient {
 
     pub async fn sync_shards_to_ms(&self) -> Result<()> {
         let shards = METADATA.read().shard_iter();
-        let addr = self.get_ms_addr();
+        let (_, mut client) = (*self.leader_conn.load().r().clone()).clone();
 
         info!("sync shards to metaserver ...");
-        let mut client = meta_service_client::MetaServiceClient::connect(addr.clone()).await?;
-
         let req = tonic::Request::new(stream::iter(SyncShardIter::new(shards.into_iter())));
 
         let resp = client
             .sync_shard_in_data_server(req)
             .await
-            .inspect_err(|e| warn!("failed to sync shard to {}, err: {:?}", addr, e))?;
+            .inspect_err(|e| warn!("failed to sync shard, err: {:?}", e))?;
 
         debug!("sync shard response: {:?}", resp);
         info!("sync shards to metaserver finished");

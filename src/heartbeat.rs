@@ -4,7 +4,7 @@ use parking_lot::RwLock;
 use tokio::{select, sync::mpsc};
 use tracing::{error, info};
 
-use crate::ms_client::MS_CLIENT;
+use crate::ms_client::get_ms_client;
 
 pub static HEART_BEATER: Lazy<RwLock<HeartBeater>> = Lazy::new(Default::default);
 
@@ -27,7 +27,7 @@ impl HeartBeater {
                         break;
                     }
                     _ = ticker.tick() => {
-                        if let Err(e) = MS_CLIENT.heartbeat(false).await {
+                        if let Err(e) = get_ms_client().await.heartbeat(false).await {
                             error!("heartbeat to metaserver failed, error: {e}");
                         }
                     }
