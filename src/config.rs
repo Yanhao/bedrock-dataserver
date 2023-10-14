@@ -1,13 +1,11 @@
 use std::net::SocketAddr;
 use std::{fs::read_to_string, net::IpAddr};
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use get_if_addrs::get_if_addrs;
 use once_cell::sync::Lazy;
 use serde::{self, Deserialize};
 use tracing::{debug, error, info};
-
-use crate::error::DataServerError;
 
 // the location of dataserver configuration directory.
 pub const DEFAULT_CONFIG_FILE: &str = "/etc/bedrock/dataserver.toml";
@@ -39,22 +37,9 @@ impl Configuration {
     pub fn parse_config_file(file: &str) -> Result<Configuration> {
         info!("parsing configuration file: {}", file);
 
-        debug!("read string from {}", file);
-        let file_contents = read_to_string(file).map_err(|_| {
-            error!("failed to read configuration file {}", file);
-            anyhow!(DataServerError::FailedToRead)
-        })?;
+        let file_contents = read_to_string(file)?;
 
-        debug!("parse toml");
-
-        let ret: Configuration = toml::from_str(&file_contents).map_err(|e| {
-            println!("failed to parse configuration file: {}", e);
-            anyhow!(DataServerError::InvalidToml)
-        })?;
-
-        debug!("successfully parsed configuration file");
-        debug!("configuration: {:?}", ret);
-        Ok(ret)
+        Ok(toml::from_str(&file_contents)?)
     }
 
     pub fn get_self_socket_addr(&self) -> SocketAddr {

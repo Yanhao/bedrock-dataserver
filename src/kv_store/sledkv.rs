@@ -5,9 +5,9 @@ use anyhow::Result;
 use bytes::Bytes;
 use sled;
 use tokio::fs::remove_dir_all;
-use tracing::{debug, error, info};
+use tracing::{error, info};
 
-use crate::{config::CONFIG, shard::Shard};
+use crate::config::CONFIG;
 
 use super::KvStore;
 
@@ -24,36 +24,32 @@ impl SledStore {
     fn db_path(shard_id: u64) -> PathBuf {
         let data_dir: PathBuf = CONFIG.read().data_directory.as_ref().unwrap().into();
 
-        let storage_id = Shard::shard_sid(shard_id);
-        let shard_isn = Shard::shard_isn(shard_id);
         data_dir
             .join::<String>("data".into())
-            .join::<String>(format!("{:08x}", storage_id))
-            .join::<String>(format!("{:08x}", shard_isn))
+            .join::<String>(format!(
+                "{:08x}",
+                ((shard_id & 0xFFFFFFFF_00000000) >> 32) as u32
+            ))
+            .join::<String>(format!("{:08x}", (shard_id & 0x00000000_FFFFFFFF) as u32))
     }
 
     pub async fn load(shard_id: u64) -> Result<Self> {
         info!("load shard sledkv db 0x{:016x}", shard_id);
+        let store = sled::open(Self::db_path(shard_id))?;
 
-        let path = Self::db_path(shard_id);
-        let store = sled::open(path).unwrap();
         Ok(Self { db: store })
     }
 
     pub async fn create(shard_id: u64) -> Result<()> {
         info!("create shard sledkv db 0x{:016x}", shard_id);
-
-        let path = Self::db_path(shard_id);
-        let _ = sled::open(path).unwrap();
+        let _ = sled::open(Self::db_path(shard_id))?;
 
         Ok(())
     }
 
     pub async fn remove(shard_id: u64) -> Result<()> {
-        let path = Self::db_path(shard_id);
-        debug!("remove directory: {:?}", path);
-
-        remove_dir_all(path).await?;
+        info!("remove shard sledkv db 0x{:016x}", shard_id);
+        remove_dir_all(Self::db_path(shard_id)).await?;
 
         Ok(())
     }
@@ -64,14 +60,8 @@ impl SledStore {
         info!("creat snapshot iterator ...");
 
         for i in self.db.iter() {
-            match i {
-                Err(e) => {
-                    error!("wrong item, err: {e}");
-                }
-                Ok(v) => {
-                    let (k, v) = v;
-                    info!("iterator: key: {:?}, value: {:?}", k.as_ref(), v.as_ref());
-                }
+            if let Ok((k, v)) = i {
+                info!("iterator: key: {:?}, value: {:?}", k.as_ref(), v.as_ref());
             }
         }
 
@@ -81,13 +71,13 @@ impl SledStore {
     }
 
     pub fn install_snapshot(&self, entries: Vec<(Bytes, bytes::Bytes)>) -> Result<()> {
-        for ent in entries.iter() {
-            info!("install_snapshot, key: {:?}, value: {:?}", ent.0, ent.1);
+        for (key, value) in entries.into_iter() {
+            info!("install_snapshot, key: {:?}, value: {:?}", key, value);
 
-            self.kv_set(ent.0.clone(), ent.1.clone()).inspect_err(|e| {
+            self.kv_set(key.clone(), value.clone()).inspect_err(|e| {
                 error!(
                     "install_snapshot, kv_set failed, err: {e}, key: {:?}, value: {:?}",
-                    ent.0, ent.1
+                    key, value,
                 )
             })?;
         }
@@ -107,6 +97,7 @@ impl Clone for SledStore {
 impl KvStore for SledStore {
     fn kv_get(&self, key: Bytes) -> Result<Option<Bytes>> {
         let iv = self.db.get(key)?;
+
         Ok(iv.map(|v| v.as_ref().to_owned().into()))
     }
 
@@ -116,12 +107,11 @@ impl KvStore for SledStore {
     }
 
     fn kv_delete(&self, key: Bytes) -> Result<Option<Bytes>> {
-        let a = self.db.remove(key)?;
-        if a.is_none() {
+        let Some(value) = self.db.remove(key)? else {
             return Ok(None);
-        }
+        };
 
-        Ok(Some(Bytes::copy_from_slice(&a.unwrap())))
+        Ok(Some(Bytes::copy_from_slice(&value)))
     }
 
     fn kv_delete_range(&self, start_key: Bytes, _end_key: Bytes) -> Result<()> {
@@ -141,31 +131,27 @@ impl KvStore for SledStore {
     }
 
     fn kv_get_prev_or_eq(&self, key: Bytes) -> Result<Option<(Bytes, bytes::Bytes)>> {
-        if let Some(a) = self.kv_get(key.clone())? {
-            return Ok(Some((key, a)));
+        if let Some(v) = self.kv_get(key.clone())? {
+            return Ok(Some((key, v)));
         }
 
-        let a = self.db.get_lt(key)?;
-        if a.is_none() {
+        let Some((key, value)) = self.db.get_lt(key)? else {
             return Ok(None);
-        }
-        let a = a.unwrap();
+        };
 
-        return Ok(Some((a.0.to_vec().into(), Bytes::copy_from_slice(&a.1))));
+        Ok(Some((key.to_vec().into(), Bytes::copy_from_slice(&value))))
     }
 
     fn kv_get_next_or_eq(&self, key: Bytes) -> Result<Option<(Bytes, bytes::Bytes)>> {
-        if let Some(a) = self.kv_get(key.clone())? {
-            return Ok(Some((key, a)));
+        if let Some(v) = self.kv_get(key.clone())? {
+            return Ok(Some((key, v)));
         }
 
-        let a = self.db.get_gt(key)?;
-        if a.is_none() {
+        let Some((key, value)) = self.db.get_gt(key)? else {
             return Ok(None);
-        }
-        let a = a.unwrap();
+        };
 
-        return Ok(Some((a.0.to_vec().into(), Bytes::copy_from_slice(&a.1))));
+        Ok(Some((key.to_vec().into(), Bytes::copy_from_slice(&value))))
     }
 
     fn kv_scan(&self, prefix: Bytes) -> Result<impl Iterator<Item = (Bytes, bytes::Bytes)>> {
@@ -184,8 +170,7 @@ impl Iterator for StoreIter {
     type Item = (Bytes, Bytes);
 
     fn next(&mut self) -> Option<Self::Item> {
-        let item = self.iter.next()?.unwrap();
-        let (key, value) = item;
+        let (key, value) = self.iter.next()?.unwrap();
 
         Some((
             key.as_ref().to_vec().into(),

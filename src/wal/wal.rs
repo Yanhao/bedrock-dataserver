@@ -10,7 +10,6 @@ use idl_gen::replog_pb::Entry;
 
 use super::{wal_file, WalError, WalTrait};
 use crate::config::CONFIG;
-use crate::shard::Shard;
 
 const MAX_ENTRY_COUNT: u64 = 10;
 
@@ -31,11 +30,12 @@ impl Wal {
     fn wal_dir_path(shard_id: u64) -> PathBuf {
         let wal_dir: PathBuf = CONFIG.read().wal_directory.as_ref().unwrap().into();
 
-        let storage_id = Shard::shard_sid(shard_id);
-        let shard_isn = Shard::shard_isn(shard_id);
         wal_dir
-            .join::<String>(format!("{:08x}", storage_id))
-            .join::<String>(format!("{:08x}", shard_isn))
+            .join::<String>(format!(
+                "{:08x}",
+                ((shard_id & 0xFFFFFFFF_00000000) >> 32) as u32
+            ))
+            .join::<String>(format!("{:08x}", (shard_id & 0x00000000_FFFFFFFF) as u32))
     }
 
     async fn load(dir: impl AsRef<Path>, shard_id: u64) -> Result<Wal> {

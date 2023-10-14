@@ -21,10 +21,10 @@ use idl_gen::service_pb::{
 };
 
 use crate::ds_client::CONNECTIONS;
+use crate::kv_store::KvStore;
 use crate::migrate_cache::ShardMigrateInfo;
 use crate::mvcc::MvccStore;
 use crate::shard::{Shard, ShardError, KV_RANGE_LIMIT, SHARD_MANAGER};
-use crate::store::KvStore;
 use crate::{migrate_cache, param_check};
 
 #[derive(Debug, Default)]
@@ -90,10 +90,14 @@ impl DataService for RealDataServer {
         Ok(Response::new(ShardInfoResponse {
             shard_id: req.get_ref().shard_id,
             create_ts: None,
-            replicates: shard.get_replicates_strings(),
+            replicates: shard
+                .replicates()
+                .into_iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<_>>(),
             is_leader: shard.is_leader(),
-            next_index: shard.get_next_index().await,
-            leader_change_ts: Some(shard.get_leader_change_ts().into()),
+            next_index: shard.next_index().await,
+            leader_change_ts: Some(shard.leader_change_ts().into()),
             replicates_update_ts: None,
             leader: String::new(),
         }))
@@ -115,7 +119,7 @@ impl DataService for RealDataServer {
         let leader_change_leader_ts: time::SystemTime =
             req.get_ref().leader_change_ts.to_owned().unwrap().into();
 
-        if shard.get_leader_change_ts() > leader_change_leader_ts {
+        if shard.leader_change_ts() > leader_change_leader_ts {
             let resp = Response::new(ShardAppendLogResponse {
                 is_old_leader: true,
                 next_index: 0,
@@ -152,7 +156,7 @@ impl DataService for RealDataServer {
 
         let resp = Response::new(ShardAppendLogResponse {
             is_old_leader: false,
-            next_index: shard.get_next_index().await,
+            next_index: shard.next_index().await,
         });
 
         info!("shard_append_log 2 resp: {:?}", resp);
@@ -172,7 +176,7 @@ impl DataService for RealDataServer {
 
         let shard = self.get_shard(first_piece.shard_id).await?;
 
-        shard.set_installing_snapshot(true);
+        shard.mark_installing_snapshot(true);
 
         while let Some(result) = in_stream.next().await {
             if result.is_err() {
@@ -181,7 +185,7 @@ impl DataService for RealDataServer {
             let piece = result.unwrap();
 
             if !param_check::shard_install_snapshot_param_check(&piece) {
-                shard.set_installing_snapshot(false);
+                shard.mark_installing_snapshot(false);
                 return Err(Status::invalid_argument(""));
             }
 
@@ -199,7 +203,7 @@ impl DataService for RealDataServer {
         }
 
         shard.reset_replog(next_index).await.unwrap();
-        shard.set_installing_snapshot(false);
+        shard.mark_installing_snapshot(false);
 
         Ok(Response::new(ShardInstallSnapshotResponse {}))
     }
@@ -280,7 +284,7 @@ impl DataService for RealDataServer {
 
             shard.mark_deleting();
             shard.stop_role().await.unwrap();
-            Shard::remove_shard(shard.get_shard_id()).await.unwrap();
+            Shard::remove_shard(shard.shard_id()).await.unwrap();
 
             migrate_cache::MIGRATE_CACHE.load().as_ref().unwrap().put(
                 first.shard_id_from,

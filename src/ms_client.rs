@@ -165,6 +165,7 @@ impl MsClient {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub async fn stop(&mut self) -> Result<()> {
         if let Some(s) = self.stop_ch.as_ref() {
             s.send(()).await?;

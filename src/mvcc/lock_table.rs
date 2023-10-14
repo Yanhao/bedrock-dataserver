@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{bail, ensure, Result};
 use bytes::{Bytes, BytesMut};
 
 use super::dstore::Dstore;
@@ -24,31 +24,26 @@ impl LockTable {
     }
 
     pub async fn lock_record(&self, key: Bytes) -> Result<()> {
-        let key = &Self::make_lock_key(key);
+        let key = Self::make_lock_key(key);
 
-        let l = self.dstore.kv_get_prev(key.clone())?;
-        if l.is_none() {
+        let Some((start, end)) = self.dstore.kv_get_prev(key.clone())? else {
             self.dstore.kv_set(key.clone(), Bytes::new()).await?;
 
             return Ok(());
-        }
-        let l = l.unwrap();
+        };
 
-        if l.1.is_empty() && l.0 == *key {
-            bail!("lock failed");
-        }
-        let (_start, end) = l;
-        if end > key {
-            bail!("lock failed");
-        }
+        ensure!(
+            (!end.is_empty() || start != key) && end <= key,
+            "lock failed"
+        );
 
-        self.dstore.kv_set(key.clone(), Bytes::new()).await?;
+        self.dstore.kv_set(key, Bytes::new()).await?;
 
         Ok(())
     }
 
     pub async fn lock_range(&self, start: Bytes, end: Bytes) -> Result<()> {
-        let (start, end) = (&Self::make_lock_key(start), &Self::make_lock_key(end));
+        let (start, end) = (Self::make_lock_key(start), Self::make_lock_key(end));
 
         let lprev = self.dstore.kv_get_prev(start.clone())?;
         let lnext = self.dstore.kv_get_next(start.clone())?;
@@ -73,11 +68,7 @@ impl LockTable {
             }
         }
 
-        self.dstore
-            .kv_set(start.clone(), end.clone().to_vec().into())
-            .await?;
-
-        Ok(())
+        self.dstore.kv_set(start, end.to_vec().into()).await
     }
 
     pub async fn unlock(&self, key: Bytes) -> Result<()> {

@@ -1,18 +1,9 @@
-use anyhow::Result;
-use bytes::Bytes;
-use thiserror::Error;
-
 mod sledkv;
 
-pub use sledkv::{KeyValue, SledStore, StoreIter};
+use anyhow::Result;
+use bytes::Bytes;
 
-#[derive(Error, Debug)]
-pub enum KvStoreError {
-    #[error("db internal error")]
-    DbInternalError,
-    #[error("no such key")]
-    NoSuchkey,
-}
+pub use sledkv::{KeyValue, SledStore, StoreIter};
 
 pub trait KvStore: Clone {
     fn kv_get(&self, key: Bytes) -> Result<Option<Bytes>>;

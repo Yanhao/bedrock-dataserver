@@ -1,12 +1,13 @@
 use anyhow::{anyhow, Result};
 use bytes::{Bytes, BytesMut};
+use chrono::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::shard::Shard;
 
 use super::{dstore::Dstore, lock_table::LockTable};
 
-const TX_TABLE_KEY_PREFIX: &'static str = "/tx_ids/";
+const TX_TABLE_KEY_PREFIX: &'static str = "/txids/";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Item {
@@ -56,21 +57,20 @@ impl MvccStore {
     async fn commit_version(&self, key: Bytes, version: u64) -> Result<()> {
         let key = Self::make_versioned_key(key, version);
 
-        let item = self
+        let item_data = self
             .dstore
             .kv_get(key.clone())?
             .ok_or(anyhow!("no such key"))?;
 
-        let mut item: Item = serde_json::from_slice(&item)?;
+        let item = {
+            let mut it: Item = serde_json::from_slice(&item_data)?;
+            it.commited = true;
+            it
+        };
 
-        item.commited = true;
-
-        let _ = self
-            .dstore
+        self.dstore
             .kv_set(key, serde_json::to_vec(&item)?.into())
-            .await?;
-
-        Ok(())
+            .await
     }
 }
 
@@ -88,14 +88,15 @@ impl MvccStore {
         let mut key = Self::make_versioned_key(key, version);
 
         loop {
-            let item = self
+            let Some(item) = self
                 .dstore
                 .kv_get_prev(key.clone())?
-                .map(|(_k, v)| v.clone());
-            if item.is_none() {
+                .map(|(_, v)| v.clone())
+            else {
                 return Ok(None);
-            }
-            let item: Item = serde_json::from_slice(&item.unwrap())?;
+            };
+
+            let item: Item = serde_json::from_slice(&item)?;
             if item.commited {
                 if item.tombstone {
                     return Ok(None);
@@ -132,17 +133,17 @@ impl MvccStore {
 
 // for write
 impl MvccStore {
-    pub async fn set_with_version(&self, tx_id: u64, key: Bytes, value: Bytes) -> Result<()> {
+    pub async fn set_with_version(&self, txid: u64, key: Bytes, value: Bytes) -> Result<()> {
         self.locks.lock_record(key.clone()).await?;
 
         self.dstore
             .kv_set(
-                Self::make_versioned_key(key.clone(), tx_id),
+                Self::make_versioned_key(key.clone(), txid),
                 serde_json::to_vec(&Item {
                     key: key.to_vec(),
-                    version: tx_id,
+                    version: txid,
                     value: value.to_vec(),
-                    timestamp: chrono::Utc::now().timestamp() as u64,
+                    timestamp: Utc::now().timestamp() as u64,
                     tombstone: false,
                     commited: false,
                 })
@@ -154,35 +155,33 @@ impl MvccStore {
         // FIXME:
         self.dstore
             .kv_set(
-                Self::make_tx_table_key(tx_id),
+                Self::make_tx_table_key(txid),
                 serde_json::to_vec(&TxTableItem {
-                    tx_id,
-                    timestamp: chrono::Utc::now().timestamp() as u64,
+                    tx_id: txid,
+                    timestamp: Utc::now().timestamp() as u64,
                     keys: vec![KeyVersion {
                         key: key.to_vec(),
-                        version: tx_id,
+                        version: txid,
                     }],
                     lock_ids: vec![key.to_vec()],
                 })
                 .unwrap()
                 .into(),
             )
-            .await?;
-
-        Ok(())
+            .await
     }
 
-    pub async fn del_with_version(&self, tx_id: u64, key: Bytes) -> Result<()> {
+    pub async fn del_with_version(&self, txid: u64, key: Bytes) -> Result<()> {
         self.locks.lock_record(key.clone()).await?;
 
         self.dstore
             .kv_set(
-                Self::make_versioned_key(key.clone(), tx_id),
+                Self::make_versioned_key(key.clone(), txid),
                 serde_json::to_vec(&Item {
                     key: key.to_vec(),
-                    version: tx_id,
+                    version: txid,
                     value: vec![],
-                    timestamp: chrono::Utc::now().timestamp() as u64,
+                    timestamp: Utc::now().timestamp() as u64,
                     tombstone: true,
                     commited: false,
                 })
@@ -194,55 +193,54 @@ impl MvccStore {
         // FIXME:
         self.dstore
             .kv_set(
-                Self::make_tx_table_key(tx_id),
+                Self::make_tx_table_key(txid),
                 serde_json::to_vec(&TxTableItem {
-                    tx_id,
-                    timestamp: chrono::Utc::now().timestamp() as u64,
+                    tx_id: txid,
+                    timestamp: Utc::now().timestamp() as u64,
                     keys: vec![KeyVersion {
                         key: key.to_vec(),
-                        version: tx_id,
+                        version: txid,
                     }],
                     lock_ids: vec![key.to_vec()],
                 })
                 .unwrap()
                 .into(),
             )
-            .await?;
-
-        Ok(())
+            .await
     }
 
-    pub async fn commit_tx(&self, tx_id: u64) -> Result<()> {
-        let tx_table = self
-            .dstore
-            .kv_get(Self::make_tx_table_key(tx_id))?
-            .ok_or(anyhow!("no such tx_id"))?;
+    pub async fn commit_tx(&self, txid: u64) -> Result<()> {
+        let tx_table: TxTableItem = {
+            let tx_table = self
+                .dstore
+                .kv_get(Self::make_tx_table_key(txid))?
+                .ok_or(anyhow!("no such txid"))?;
+            serde_json::from_slice(&tx_table)?
+        };
 
-        let tx_table: TxTableItem = serde_json::from_slice(&tx_table)?;
-
-        for i in tx_table.keys.iter() {
-            self.commit_version(Bytes::from(i.key.clone()), i.version)
+        for kv in tx_table.keys.iter() {
+            self.commit_version(Bytes::from(kv.key.clone()), kv.version)
                 .await?;
         }
 
-        for id in tx_table.lock_ids.iter() {
-            self.locks.unlock(Bytes::from(id.clone())).await?;
+        for lock_key in tx_table.lock_ids.into_iter() {
+            self.locks.unlock(Bytes::from(lock_key)).await?;
         }
 
         Ok(())
     }
 
-    pub async fn abort_tx(&self, tx_id: u64) -> Result<()> {
-        let tx_table = self
-            .dstore
-            .kv_delete(Self::make_tx_table_key(tx_id))
-            .await?
-            .ok_or(anyhow!("no such tx_id"))?;
+    pub async fn abort_tx(&self, txid: u64) -> Result<()> {
+        let tx_table: TxTableItem = {
+            let tx_table = self
+                .dstore
+                .kv_get(Self::make_tx_table_key(txid))?
+                .ok_or(anyhow!("no such txid"))?;
+            serde_json::from_slice(&tx_table)?
+        };
 
-        let tx_table: TxTableItem = serde_json::from_slice(&tx_table)?;
-
-        for id in tx_table.lock_ids.iter() {
-            self.locks.unlock(Bytes::from(id.clone())).await?;
+        for id in tx_table.lock_ids.into_iter() {
+            self.locks.unlock(Bytes::from(id)).await?;
         }
 
         Ok(())

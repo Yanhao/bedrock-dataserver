@@ -13,19 +13,6 @@ pub const KV_RANGE_LIMIT: i32 = 256;
 
 #[derive(Error, Debug)]
 pub enum ShardError {
-    #[error("no such shard")]
-    NoSuchShard,
-    #[error("shard already exists")]
-    ShardExists,
-
-    #[error("no such key")]
-    NoSuchKey,
-
-    #[error("order keeper timeout")]
-    Timeout,
-    #[error("ignore this order")]
-    IgnoreOrder,
-
     #[error("not leader")]
     NotLeader,
 

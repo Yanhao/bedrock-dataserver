@@ -30,7 +30,7 @@ impl Leader {
         self.stop_ch.replace(tx);
 
         tokio::spawn(async move {
-            let shard_id = shard.get_shard_id();
+            let shard_id = shard.shard_id();
             info!("start append entry task for shard: 0x{:016x}", shard_id);
 
             'outer: loop {
@@ -44,7 +44,7 @@ impl Leader {
 
                         info!("fsm worker receive entry, entry: {:?}", en);
 
-                        let replicates = shard.get_replicates();
+                        let replicates = shard.replicates();
                         'inner: for addr in replicates.iter() {
                             match shard.clone().append_log_entry_to(&addr.to_string(), en.entry.clone()).await {
                                 Err(ShardError::NotLeader) => {

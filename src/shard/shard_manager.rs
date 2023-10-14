@@ -5,10 +5,8 @@ use anyhow::Result;
 use once_cell::sync::Lazy;
 
 use super::Shard;
-use crate::store::KvStore;
+use crate::kv_store::KvStore;
 use crate::wal::Wal;
-
-const _DEFAULT_SHARD_CAPACITY: u64 = 10240;
 
 pub static SHARD_MANAGER: Lazy<ShardManager> = Lazy::new(ShardManager::new);
 
@@ -52,42 +50,33 @@ impl ShardManager {
     }
 
     pub async fn split_shard(&self, shard_id: u64, new_shard_id: u64) -> Result<()> {
-        let shard = self.load_shard(shard_id).await.unwrap();
+        let shard = self.load_shard(shard_id).await?;
 
-        let replicates = shard.get_replicates();
-        let leader = shard.get_leader();
-        let last_wal_index = shard.get_next_index().await;
+        let (start_key, end_key) = (shard.middle_key(), shard.max_key());
 
-        let start_key = shard.middle_key();
-        let end_key = shard.max_key();
+        let new_shard = Arc::new(
+            Shard::create_shard_for_split(
+                new_shard_id,
+                shard.leader(),
+                shard.replicates(),
+                shard.next_index().await,
+                start_key.clone()..end_key.clone(),
+            )
+            .await?,
+        );
 
-        let new_shard = Shard::create_shard_for_split(
-            new_shard_id,
-            leader,
-            replicates,
-            last_wal_index,
-            start_key.clone()..end_key.clone(),
-        )
-        .await?;
-
-        let new_shard = Arc::new(new_shard);
-
-        Wal::create_wal_dir(shard_id).await.unwrap();
+        Wal::create_wal_dir(shard_id).await?;
 
         self.shards.write().insert(new_shard_id, new_shard.clone());
 
-        let iter = shard.create_split_iter(&start_key, &end_key).await.unwrap();
-        for kv in iter.into_iter() {
-            let key = kv.0.to_owned();
-            let value = kv.1.to_owned();
-
+        let iter = shard.create_split_iter(&start_key, &end_key).await?;
+        for (key, value) in iter.into_iter() {
             new_shard.kv_store.kv_set(key, value)?;
         }
 
         shard
             .kv_store
-            .kv_delete_range(start_key.into(), end_key.into())
-            .unwrap();
+            .kv_delete_range(start_key.into(), end_key.into())?;
 
         new_shard.start_role().await?;
 
@@ -100,17 +89,14 @@ impl ShardManager {
 
         let iter = shard_b.kv_store.take_snapshot()?;
 
-        for kv in iter.into_iter() {
-            let key = kv.0.to_owned();
-            let value = kv.1.to_owned();
-
+        for (key, value) in iter.into_iter() {
             shard_a.kv_store.kv_set(key, value)?;
         }
 
         shard_b.stop_role().await?;
 
-        self.remove_shard(shard_id_b).await.unwrap();
-        Shard::remove_shard(shard_b.get_shard_id()).await?;
+        self.remove_shard(shard_id_b).await?;
+        Shard::remove_shard(shard_b.shard_id()).await?;
 
         Ok(())
     }

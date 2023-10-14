@@ -2,7 +2,6 @@ use std::net::SocketAddr;
 use std::ops::Range;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time;
 use std::vec::Vec;
 
 use anyhow::{anyhow, bail, Result};
@@ -10,7 +9,6 @@ use arc_swap::ArcSwapOption;
 use bytes::Bytes;
 use futures_util::stream;
 use num_bigint::{BigUint, ToBigUint};
-use parking_lot;
 use prost::Message;
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tonic::Request;
@@ -24,11 +22,10 @@ use idl_gen::service_pb::{
 
 use crate::config::CONFIG;
 use crate::ds_client::CONNECTIONS;
+use crate::kv_store::{self, KvStore, SledStore};
 use crate::metadata::{Meta, METADATA};
 use crate::role::{Follower, Leader, Role};
 use crate::shard::ShardError;
-use crate::store::kv_store::KvStore;
-use crate::store::{kv_store, SledStore};
 use crate::wal::{Wal, WalTrait};
 
 use super::Operation;
@@ -144,9 +141,9 @@ impl Shard {
         let meta = ShardMeta {
             shard_id,
             is_leader: false,
-            create_ts: Some(time::SystemTime::now().into()),
-            replicates_update_ts: Some(time::SystemTime::now().into()),
-            leader_change_ts: Some(time::SystemTime::now().into()),
+            create_ts: Some(std::time::SystemTime::now().into()),
+            replicates_update_ts: Some(std::time::SystemTime::now().into()),
+            leader_change_ts: Some(std::time::SystemTime::now().into()),
 
             leader,
             replicates: replicates.into_iter().map(|r| r.to_string()).collect(),
@@ -187,54 +184,16 @@ impl Shard {
 
         Ok(())
     }
-
-    pub fn shard_isn(shard_id: u64) -> u32 {
-        (shard_id & 0x00000000_FFFFFFFF) as u32
-    }
-
-    pub fn shard_sid(shard_id: u64) -> u32 {
-        ((shard_id & 0xFFFFFFFF_00000000) >> 32) as u32
-    }
 }
 
 impl Shard {
-    pub fn get_shard_id(&self) -> u64 {
+    pub fn shard_id(&self) -> u64 {
         self.shard_meta.read().shard_id
     }
-
-    pub fn is_deleting(&self) -> bool {
-        self.deleting.load(Ordering::Relaxed)
-    }
-
-    pub fn mark_deleting(&self) {
-        self.deleting.store(true, Ordering::Relaxed)
-    }
-
-    pub fn is_installing_snapshot(&self) -> bool {
-        self.installing_snapshot.load(Ordering::Relaxed)
-    }
-
-    pub fn set_installing_snapshot(&self, i: bool) {
-        self.installing_snapshot.store(i, Ordering::Relaxed);
-    }
-
-    pub fn is_leader(&self) -> bool {
-        self.shard_meta.read().is_leader
-    }
-
-    pub fn set_is_leader(&self, l: bool) {
-        self.shard_meta.write().is_leader = l;
-    }
-
-    pub fn get_leader(&self) -> String {
+    pub fn leader(&self) -> String {
         self.shard_meta.read().leader.clone()
     }
-
-    pub fn update_leader_change_ts(&self, t: time::SystemTime) {
-        self.shard_meta.write().leader_change_ts = Some(t.into());
-    }
-
-    pub fn get_leader_change_ts(&self) -> time::SystemTime {
+    pub fn leader_change_ts(&self) -> std::time::SystemTime {
         self.shard_meta
             .read()
             .leader_change_ts
@@ -242,8 +201,7 @@ impl Shard {
             .unwrap()
             .into()
     }
-
-    pub fn get_replicates(&self) -> Vec<SocketAddr> {
+    pub fn replicates(&self) -> Vec<SocketAddr> {
         self.shard_meta
             .read()
             .replicates
@@ -251,13 +209,37 @@ impl Shard {
             .map(|a| a.parse().unwrap())
             .collect()
     }
-
-    pub fn get_replicates_strings(&self) -> Vec<String> {
-        self.shard_meta.read().replicates.clone()
+    pub fn is_deleting(&self) -> bool {
+        self.deleting.load(Ordering::Relaxed)
+    }
+    pub fn is_installing_snapshot(&self) -> bool {
+        self.installing_snapshot.load(Ordering::Relaxed)
+    }
+    pub fn is_leader(&self) -> bool {
+        self.shard_meta.read().is_leader
     }
 
+    pub fn mark_deleting(&self) {
+        self.deleting.store(true, Ordering::Relaxed)
+    }
+    pub fn mark_installing_snapshot(&self, i: bool) {
+        self.installing_snapshot.store(i, Ordering::Relaxed);
+    }
+    pub fn set_is_leader(&self, l: bool) {
+        self.shard_meta.write().is_leader = l;
+    }
+    pub fn update_leader_change_ts(&self, t: std::time::SystemTime) {
+        self.shard_meta.write().leader_change_ts = Some(t.into());
+    }
     pub fn set_replicates(&self, replicates: &[SocketAddr]) {
         self.shard_meta.write().replicates = replicates.iter().map(|s| s.to_string()).collect();
+    }
+
+    pub async fn next_index(&self) -> u64 {
+        self.replog.read().await.next_index()
+    }
+    pub async fn reset_replog(&self, next_index: u64) -> Result<()> {
+        self.replog.write().await.compact(next_index).await
     }
 
     pub async fn save_meta(&self) -> Result<()> {
@@ -268,17 +250,9 @@ impl Shard {
 
         METADATA
             .write()
-            .put_shard(self.get_shard_id(), self.shard_meta.read().clone())?;
+            .put_shard(self.shard_id(), self.shard_meta.read().clone())?;
 
         Ok(())
-    }
-
-    pub async fn get_next_index(&self) -> u64 {
-        self.replog.read().await.next_index()
-    }
-
-    pub async fn reset_replog(&self, next_index: u64) -> Result<()> {
-        self.replog.write().await.compact(next_index).await
     }
 }
 
@@ -402,7 +376,7 @@ impl Shard {
         addr: &str,
         en: Entry,
     ) -> std::result::Result<(), ShardError> {
-        let shard_id = self.get_shard_id();
+        let shard_id = self.shard_id();
         let mut client = CONNECTIONS
             .get_client(addr)
             .await
@@ -410,7 +384,7 @@ impl Shard {
 
         let request = Request::new(ShardAppendLogRequest {
             shard_id,
-            leader_change_ts: Some(self.get_leader_change_ts().into()),
+            leader_change_ts: Some(self.leader_change_ts().into()),
             entries: vec![shard_append_log_request::Entry {
                 op: en.op.clone(),
                 index: en.index,
@@ -459,7 +433,7 @@ impl Shard {
 
             let request = Request::new(ShardAppendLogRequest {
                 shard_id,
-                leader_change_ts: Some(self.get_leader_change_ts().into()),
+                leader_change_ts: Some(self.leader_change_ts().into()),
                 entries: ents
                     .iter()
                     .map(|ent| {
@@ -496,7 +470,7 @@ impl Shard {
     ) -> Result<u64 /*last_wal_index */> {
         let snap = self.kv_store.take_snapshot()?;
 
-        let next_wal_index = self.get_next_index().await; // FIXME: keep atomic with above
+        let next_wal_index = self.next_index().await; // FIXME: keep atomic with above
 
         let mut req_stream = vec![];
         for kv in snap.into_iter() {
@@ -505,7 +479,7 @@ impl Shard {
             info!("install_snapshot_to, key: {:?}, value: {:?}", key, value);
 
             req_stream.push(ShardInstallSnapshotRequest {
-                shard_id: self.get_shard_id(),
+                shard_id: self.shard_id(),
                 next_index: next_wal_index,
                 entries: vec![shard_install_snapshot_request::Entry {
                     key: key.into(),
