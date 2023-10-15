@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::str::pattern::Pattern;
 use std::sync::Arc;
 
 use anyhow::Result;
+use arc_swap::access::Access;
 use arc_swap::ArcSwapOption;
 use futures_util::stream;
 use idl_gen::metaserver_pb::meta_service_client::MetaServiceClient;
@@ -91,8 +93,8 @@ impl Iterator for SyncShardIter<ShardMetaIter> {
 }
 
 pub struct MsClient {
-    leader_conn: Arc<ArcSwapOption<(SocketAddr, MetaServiceClient<Channel>)>>,
-    follower_conns: Arc<parking_lot::RwLock<HashMap<SocketAddr, MetaServiceClient<Channel>>>>,
+    leader_conn: Arc<ArcSwapOption<(String, MetaServiceClient<Channel>)>>,
+    follower_conns: Arc<parking_lot::RwLock<HashMap<String, MetaServiceClient<Channel>>>>,
 
     stop_ch: Option<mpsc::Sender<()>>,
 }
@@ -108,16 +110,29 @@ impl MsClient {
     }
 
     async fn update_ms_conns(
-        leader_conn: Arc<ArcSwapOption<(SocketAddr, MetaServiceClient<Channel>)>>,
-        follower_conns: Arc<parking_lot::RwLock<HashMap<SocketAddr, MetaServiceClient<Channel>>>>,
+        leader_conn: Arc<ArcSwapOption<(String, MetaServiceClient<Channel>)>>,
+        follower_conns: Arc<parking_lot::RwLock<HashMap<String, MetaServiceClient<Channel>>>>,
     ) -> Result<()> {
-        let (addr, mut conn) = (*leader_conn.load().r().clone()).clone();
+        if leader_conn.load().is_none() {
+            let ms_addr = CONFIG.read().metaserver_url.clone();
+            let conn = MetaServiceClient::connect(ms_addr.clone()).await?;
+            leader_conn.s((ms_addr, conn));
+
+            return Ok(());
+        }
+
+        let (url, mut conn) = (*leader_conn.load().r().clone()).clone();
         let resp = conn.info(InfoRequest {}).await?.into_inner();
 
-        let leader_addr = resp.leader_addr.parse().unwrap();
-        if leader_addr != addr {
+        let leader_url = if "http://".is_prefix_of(&resp.leader_addr) {
+            resp.leader_addr.clone()
+        } else {
+            format!("http://{}", resp.leader_addr)
+        };
+
+        if leader_url != url {
             let conn = MetaServiceClient::connect(resp.leader_addr).await?;
-            leader_conn.s((leader_addr, conn));
+            leader_conn.s((leader_url, conn));
         }
 
         let mut new_follower_conns = follower_conns
@@ -127,10 +142,14 @@ impl MsClient {
             .filter(|(addr, _)| resp.follower_addrs.contains(&addr.to_string()))
             .collect::<HashMap<_, _>>();
 
-        for addr in resp.follower_addrs.into_iter() {
-            let socket = addr.parse().unwrap();
-            if !new_follower_conns.contains_key(&socket) {
-                new_follower_conns.insert(socket, MetaServiceClient::connect(addr).await?);
+        for url in resp.follower_addrs.into_iter() {
+            let follower_url = if "http://".is_prefix_of(&url) {
+                url.clone()
+            } else {
+                format!("http://{}", url)
+            };
+            if !new_follower_conns.contains_key(&follower_url) {
+                new_follower_conns.insert(follower_url, MetaServiceClient::connect(url).await?);
             }
         }
 
@@ -142,6 +161,10 @@ impl MsClient {
     pub async fn start(&mut self) -> Result<()> {
         let (tx, mut rx) = mpsc::channel(1);
         self.stop_ch.replace(tx);
+
+        let ms_addr = CONFIG.read().metaserver_url.clone();
+        let conn = MetaServiceClient::connect(ms_addr.clone()).await?;
+        self.leader_conn.s((ms_addr, conn));
 
         let leader_conn = self.leader_conn.clone();
         let follower_conns = self.follower_conns.clone();

@@ -2,6 +2,7 @@
 #![feature(return_position_impl_trait_in_trait)]
 #![feature(impl_trait_in_assoc_type)]
 #![feature(async_closure)]
+#![feature(pattern)]
 
 use tracing::info;
 
@@ -12,6 +13,7 @@ pub mod format;
 pub mod handler;
 pub mod heartbeat;
 pub mod kv_store;
+pub mod load_status;
 pub mod metadata;
 pub mod migrate_cache;
 mod ms_client;

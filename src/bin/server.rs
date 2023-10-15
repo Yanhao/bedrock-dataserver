@@ -46,7 +46,7 @@ struct Args {
     #[arg(short, long, default_value_t = false)]
     format: bool,
     #[arg(long)]
-    format_dir: String,
+    format_dir: Option<String>,
 }
 
 #[tokio::main]
@@ -55,7 +55,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args = Args::parse();
     if args.format {
-        format_dir(&args.format_dir)?;
+        format_dir(&args.format_dir.unwrap())?;
         std::process::exit(0);
     }
 
@@ -63,7 +63,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_config(&args.config)
         .inspect_err(|e| error!("failed to initialize configuration, err: {e}"))?;
 
-    let work_dir = CONFIG.read().work_directory.as_ref().unwrap().to_owned();
+    let work_dir = CONFIG.read().work_dir.as_ref().unwrap().to_owned();
     set_current_dir(&work_dir)?;
     info!("change working directory to {work_dir}/");
 

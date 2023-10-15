@@ -22,7 +22,7 @@ pub struct KeyValue {
 
 impl SledStore {
     fn db_path(shard_id: u64) -> PathBuf {
-        let data_dir: PathBuf = CONFIG.read().data_directory.as_ref().unwrap().into();
+        let data_dir: PathBuf = CONFIG.read().data_dir.as_ref().unwrap().into();
 
         data_dir
             .join::<String>("data".into())

@@ -14,22 +14,13 @@ static HOST_IP: Lazy<IpAddr> = Lazy::new(|| get_if_addrs().unwrap()[0].addr.ip()
 pub static CONFIG: Lazy<parking_lot::RwLock<Configuration>> = Lazy::new(Default::default);
 
 #[derive(Deserialize, Debug, Clone, Default)]
-pub enum DiskType {
-    SSD,
-    #[default]
-    HDD,
-}
-
-#[derive(Deserialize, Debug, Clone, Default)]
 pub struct Configuration {
-    pub raft_server_addr: Option<String>,
     pub rpc_server_addr: Option<String>,
+    pub metaserver_url: String,
 
-    pub work_directory: Option<String>,
-    pub disk_type: Option<DiskType>,
-    pub managers: Option<Vec<String>>,
-    pub wal_directory: Option<String>,
-    pub data_directory: Option<String>,
+    pub work_dir: Option<String>,
+    pub wal_dir: Option<String>,
+    pub data_dir: Option<String>,
 }
 
 impl Configuration {
@@ -79,11 +70,8 @@ mod tests {
 
         let config1 = config1_res.unwrap();
 
-        assert_eq!(config1.work_directory.unwrap(), "/");
+        assert_eq!(config1.work_dir.unwrap(), "/");
         // assert_eq!(config1.disk_type.unwrap(), DiskType::SSD);
         assert_eq!(config1.rpc_server_addr.unwrap(), "0.0.0.0:8888");
-
-        println!("{:?}", config1.disk_type);
-        println!("{:?}", config1.managers);
     }
 }

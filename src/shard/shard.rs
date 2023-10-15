@@ -261,13 +261,9 @@ impl Shard {
         let min = BigUint::from_bytes_be(&self.shard_meta.read().min_key);
         let max = BigUint::from_bytes_be(&self.shard_meta.read().max_key);
 
-        let middle = min.clone() + (max - min) / 2.to_biguint().unwrap();
+        let middle = (max + min) / 2.to_biguint().unwrap();
 
         middle.to_bytes_be()
-    }
-
-    pub fn min_key(&self) -> Vec<u8> {
-        self.shard_meta.read().min_key.clone()
     }
 
     pub fn max_key(&self) -> Vec<u8> {

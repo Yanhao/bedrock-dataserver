@@ -20,6 +20,7 @@ impl ShardSyncer {
 
         tokio::spawn(async move {
             let mut ticker = tokio::time::interval(tokio::time::Duration::from_secs(60));
+            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await; // make sure ms_client init successful first
 
             loop {
                 select! {

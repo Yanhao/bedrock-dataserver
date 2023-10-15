@@ -28,7 +28,7 @@ impl Wal {
     }
 
     fn wal_dir_path(shard_id: u64) -> PathBuf {
-        let wal_dir: PathBuf = CONFIG.read().wal_directory.as_ref().unwrap().into();
+        let wal_dir: PathBuf = CONFIG.read().wal_dir.as_ref().unwrap().into();
 
         wal_dir
             .join::<String>(format!(
