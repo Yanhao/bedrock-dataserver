@@ -137,7 +137,7 @@ impl Iterator for ShardMetaIter {
             }
             Ok(v) => {
                 let meta = ShardMeta::decode(v.1.as_ref()).unwrap();
-                info!("shard meta read from metadata: {meta:#?}");
+                debug!("shard meta read from metadata: {meta:#?}");
                 Some(meta)
             }
         }

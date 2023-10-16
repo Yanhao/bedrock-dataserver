@@ -5,7 +5,7 @@ use anyhow::Result;
 use futures::StreamExt;
 use futures_util::stream;
 use tonic::{Request, Response, Status, Streaming};
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 use idl_gen::replog_pb;
 use idl_gen::service_pb::data_service_server::DataService;
@@ -335,9 +335,12 @@ impl DataService for RealDataServer {
             return Err(Status::invalid_argument(""));
         }
 
+        info!("split shard, req: {:?}", req);
+
         SHARD_MANAGER
             .split_shard(req.get_ref().shard_id, req.get_ref().new_shard_id)
             .await
+            .inspect_err(|e| error!("split shard failed, err: {e}"))
             .unwrap();
 
         info!(

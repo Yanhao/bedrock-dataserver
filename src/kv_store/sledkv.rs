@@ -119,7 +119,10 @@ impl KvStore for SledStore {
         let start_key: Vec<u8> = start_key.into();
 
         loop {
-            let (key, _) = self.db.pop_max().unwrap().unwrap();
+            let Some((key, _)) = self.db.pop_max().unwrap() else {
+                break;
+            };
+
             let key: Vec<u8> = key.as_ref().to_owned();
             if key < start_key {
                 self.db.remove(key)?;

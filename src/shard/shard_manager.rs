@@ -50,7 +50,7 @@ impl ShardManager {
     }
 
     pub async fn split_shard(&self, shard_id: u64, new_shard_id: u64) -> Result<()> {
-        let shard = self.load_shard(shard_id).await?;
+        let shard = self.get_shard(shard_id).await?;
 
         let (start_key, end_key) = (shard.middle_key(), shard.max_key());
 
@@ -64,8 +64,6 @@ impl ShardManager {
             )
             .await?,
         );
-
-        Wal::create_wal_dir(shard_id).await?;
 
         self.shards.write().insert(new_shard_id, new_shard.clone());
 
@@ -84,8 +82,8 @@ impl ShardManager {
     }
 
     pub async fn merge_shard(&self, shard_id_a: u64, shard_id_b: u64) -> Result<()> {
-        let shard_a = self.load_shard(shard_id_a).await?;
-        let shard_b = self.load_shard(shard_id_b).await?;
+        let shard_a = self.get_shard(shard_id_a).await?;
+        let shard_b = self.get_shard(shard_id_b).await?;
 
         let iter = shard_b.kv_store.take_snapshot()?;
 

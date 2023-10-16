@@ -160,6 +160,7 @@ impl Shard {
 
         METADATA.write().put_shard(shard_id, meta.clone())?;
 
+        Wal::create_wal_dir(shard_id).await?;
         let wal = Wal::load_wal_by_shard_id(shard_id).await?;
 
         Ok(Self::new(sled_db, meta, wal))
