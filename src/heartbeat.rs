@@ -1,7 +1,7 @@
 use anyhow::Result;
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
-use tokio::{select, sync::mpsc};
+use tokio::{select, sync::mpsc, time::MissedTickBehavior};
 use tracing::{error, info};
 
 use crate::ms_client::get_ms_client;
@@ -20,6 +20,7 @@ impl HeartBeater {
 
         tokio::spawn(async move {
             let mut ticker = tokio::time::interval(tokio::time::Duration::from_secs(10));
+            ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
             tokio::time::sleep(tokio::time::Duration::from_secs(2)).await; // make sure ms_client init successful first
 
             loop {
