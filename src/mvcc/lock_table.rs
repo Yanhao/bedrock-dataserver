@@ -6,12 +6,12 @@ use super::dstore::Dstore;
 const LOCK_KEY_PREFIX: &'static str = "/lock/";
 
 #[derive(Clone)]
-pub struct LockTable {
-    dstore: Dstore,
+pub struct LockTable<'a> {
+    dstore: Dstore<'a>,
 }
 
-impl LockTable {
-    pub fn new(s: Dstore) -> Self {
+impl<'a> LockTable<'a> {
+    pub fn new(s: Dstore<'a>) -> Self {
         Self { dstore: s }
     }
 

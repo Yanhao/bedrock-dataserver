@@ -34,12 +34,12 @@ struct KeyVersion {
 }
 
 #[derive(Clone)]
-pub struct MvccStore {
-    dstore: Dstore,
-    locks: LockTable,
+pub struct MvccStore<'a> {
+    dstore: Dstore<'a>,
+    locks: LockTable<'a>,
 }
 
-impl MvccStore {
+impl<'a> MvccStore<'a> {
     fn make_tx_table_key(txid: u64) -> Bytes {
         let mut b = BytesMut::new();
         b.extend_from_slice(TX_TABLE_KEY_PREFIX.as_bytes());
@@ -75,8 +75,8 @@ impl MvccStore {
 }
 
 // for read
-impl MvccStore {
-    pub fn new(shard: std::sync::Arc<Shard>) -> Self {
+impl<'a> MvccStore<'a> {
+    pub fn new(shard: &'a Shard) -> Self {
         let s = Dstore::new(shard);
         Self {
             dstore: s.clone(),
@@ -132,7 +132,7 @@ impl MvccStore {
 }
 
 // for write
-impl MvccStore {
+impl<'a> MvccStore<'a> {
     pub async fn set_with_version(&self, txid: u64, key: Bytes, value: Bytes) -> Result<()> {
         self.locks.lock_record(key.clone()).await?;
 
@@ -248,7 +248,7 @@ impl MvccStore {
 }
 
 // for locks
-impl MvccStore {
+impl<'a> MvccStore<'a> {
     pub async fn lock_record(&self, key: Bytes) -> Result<()> {
         self.locks.lock_record(key).await
     }

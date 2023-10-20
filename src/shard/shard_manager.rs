@@ -6,7 +6,6 @@ use once_cell::sync::Lazy;
 
 use super::Shard;
 use crate::kv_store::KvStore;
-use crate::wal::Wal;
 
 pub static SHARD_MANAGER: Lazy<ShardManager> = Lazy::new(ShardManager::new);
 

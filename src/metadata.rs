@@ -7,7 +7,7 @@ use once_cell::sync::Lazy;
 use prost::Message;
 use serde::{Deserialize, Serialize};
 use sled;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 use idl_gen::service_pb::ShardMeta;
 

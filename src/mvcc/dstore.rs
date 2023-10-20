@@ -1,19 +1,17 @@
-use std::sync::Arc;
-
 use anyhow::Result;
 use bytes::Bytes;
-use tracing::debug;
+use tracing::{debug, error};
 
 use crate::kv_store::KvStore;
 use crate::shard::{self, Shard};
 
 #[derive(Clone)]
-pub struct Dstore {
-    shard: Arc<Shard>,
+pub struct Dstore<'a> {
+    shard: &'a Shard,
 }
 
-impl Dstore {
-    pub fn new(shard: Arc<Shard>) -> Self {
+impl<'a> Dstore<'a> {
+    pub fn new(shard: &'a Shard) -> Self {
         Self { shard }
     }
 
@@ -37,11 +35,38 @@ impl Dstore {
         let mut entry_with_notifier = self
             .shard
             .process_write(shard::Operation::Set, &key, &value.to_vec())
-            .await?;
+            .await
+            .inspect_err(|e| {
+                error!(
+                    msg = "process wirte failed.",
+                    err = ?e,
+                    op = "kv_set",
+                    key = unsafe { String::from_utf8_unchecked(key.to_vec()) },
+                )
+            })?;
 
         debug!("start wait result");
-        entry_with_notifier.wait_result().await?;
-        let _ = self.shard.apply_entry(&entry_with_notifier.entry).await?;
+        entry_with_notifier.wait_result().await.inspect_err(|e| {
+            error!(
+                msg = "write wait result failed.",
+                err = ?e,
+                op = "kv_set",
+                key = unsafe { String::from_utf8_unchecked(key.to_vec()) },
+            )
+        })?;
+        let _ = self
+            .shard
+            .apply_entry(&entry_with_notifier.entry)
+            .await
+            .inspect_err(|e| {
+                error!(
+                    msg = "apply entry failed.",
+                    err = ?e,
+                    op = "kv_set",
+                    key = unsafe { String::from_utf8_unchecked(key.to_vec()) },
+                )
+            })?;
+
         debug!(" wait result successed");
 
         Ok(())
@@ -51,13 +76,37 @@ impl Dstore {
         let mut entry_with_notifier = self
             .shard
             .process_write(shard::Operation::Del, &key, &vec![])
-            .await?;
+            .await
+            .inspect_err(|e| {
+                error!(
+                    msg = "process wirte failed.",
+                    err = ?e,
+                    op = "kv_delete",
+                    key = unsafe { String::from_utf8_unchecked(key.to_vec()) },
+                )
+            })?;
 
         debug!("start wait result");
-        entry_with_notifier.wait_result().await?;
+        entry_with_notifier.wait_result().await.inspect_err(|e| {
+            error!(
+                msg = "write wait result failed.",
+                err = ?e,
+                op = "kv_delete",
+                key = unsafe { String::from_utf8_unchecked(key.to_vec()) },
+            )
+        })?;
+
         self.shard
             .apply_entry(&entry_with_notifier.entry)
             .await
             .inspect(|_| debug!(" wait result successed"))
+            .inspect_err(|e| {
+                error!(
+                    msg = "apply entry failed.",
+                    err = ?e,
+                    op = "kv_delete",
+                    key = unsafe { String::from_utf8_unchecked(key.to_vec()) },
+                )
+            })
     }
 }

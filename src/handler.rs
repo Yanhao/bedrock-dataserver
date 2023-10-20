@@ -377,7 +377,7 @@ impl DataService for RealDataServer {
 
         let shard = self.get_shard(req.get_ref().shard_id).await?;
 
-        let value = MvccStore::new(shard)
+        let value = MvccStore::new(shard.as_ref())
             .get_until_version(req.get_ref().key.clone().into(), req.get_ref().txid)
             .map_err(|_| Status::not_found("no such key"))?
             .ok_or(Status::not_found("not such key"))?;
@@ -401,7 +401,7 @@ impl DataService for RealDataServer {
             return Err(Status::invalid_argument(""));
         }
 
-        let kvs = MvccStore::new(shard.clone())
+        let kvs = MvccStore::new(shard.as_ref())
             .scan_util_version(
                 req.get_ref().prefix.clone().into(),
                 req.get_ref().txid,
@@ -436,7 +436,7 @@ impl DataService for RealDataServer {
             return Err(Status::unavailable("not leader"));
         }
 
-        let mvcc_store = MvccStore::new(shard);
+        let mvcc_store = MvccStore::new(shard.as_ref());
         mvcc_store
             .set_with_version(
                 req.get_ref().txid,
@@ -469,7 +469,7 @@ impl DataService for RealDataServer {
 
         let key = req.get_ref().key.clone();
 
-        let mvcc_store = MvccStore::new(shard);
+        let mvcc_store = MvccStore::new(shard.as_ref());
         let value = mvcc_store
             .get_until_version(key.clone().into(), req.get_ref().txid)
             .map_err(|_| Status::internal("get_util_version failed"))?;
@@ -509,7 +509,7 @@ impl DataService for RealDataServer {
             return Ok(Response::new(ShardLockResponse {}));
         }
 
-        let mvcc_store = MvccStore::new(shard);
+        let mvcc_store = MvccStore::new(shard.as_ref());
         let lock = req.get_ref().lock.clone().unwrap();
         match lock {
             shard_lock_request::Lock::Record(l) => {
@@ -542,7 +542,7 @@ impl DataService for RealDataServer {
             return Err(Status::unavailable("not leader"));
         }
 
-        let mvcc_store = MvccStore::new(shard);
+        let mvcc_store = MvccStore::new(shard.as_ref());
 
         for kv in req.get_ref().kvs.iter() {
             mvcc_store
@@ -571,7 +571,7 @@ impl DataService for RealDataServer {
             return Err(Status::unavailable("not leader"));
         }
 
-        let mvcc_store = MvccStore::new(shard);
+        let mvcc_store = MvccStore::new(shard.as_ref());
         mvcc_store
             .commit_tx(req.get_ref().txid)
             .await
@@ -593,7 +593,7 @@ impl DataService for RealDataServer {
             return Err(Status::unavailable("not leader"));
         }
 
-        let mvcc_store = MvccStore::new(shard);
+        let mvcc_store = MvccStore::new(shard.as_ref());
         mvcc_store
             .abort_tx(req.get_ref().txid)
             .await
