@@ -511,16 +511,17 @@ impl DataService for RealDataServer {
 
         let mvcc_store = MvccStore::new(shard.as_ref());
         let lock = req.get_ref().lock.clone().unwrap();
+        let txid = req.get_ref().txid;
         match lock {
             shard_lock_request::Lock::Record(l) => {
                 mvcc_store
-                    .lock_record(l.into())
+                    .lock_record(txid, l.into())
                     .await
                     .map_err(|_| Status::internal("lock failed"))?;
             }
             shard_lock_request::Lock::Range(l) => {
                 mvcc_store
-                    .lock_range(l.start_key.into(), l.end_key.into())
+                    .lock_range(txid, l.start_key.into(), l.end_key.into())
                     .await
                     .map_err(|_| Status::internal("lock failed"))?;
             }

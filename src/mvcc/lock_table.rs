@@ -1,9 +1,9 @@
-use anyhow::{bail, ensure, Result};
+use anyhow::{bail, Result};
 use bytes::{Bytes, BytesMut};
 
-use super::dstore::Dstore;
+use super::{dstore::Dstore, model::LockItem};
 
-const LOCK_KEY_PREFIX: &'static str = "/lock/";
+const LOCK_KEY_PREFIX: &'static str = "/locks/";
 
 #[derive(Clone)]
 pub struct LockTable<'a> {
@@ -23,52 +23,80 @@ impl<'a> LockTable<'a> {
         b.freeze()
     }
 
-    pub async fn lock_record(&self, key: Bytes) -> Result<()> {
+    pub async fn lock_record(&self, txid: u64, key: Bytes) -> Result<()> {
         let key = Self::make_lock_key(key);
 
-        let Some((start, end)) = self.dstore.kv_get_prev(key.clone())? else {
-            self.dstore.kv_set(key.clone(), Bytes::new()).await?;
+        let Some((start, data)) = self.dstore.kv_get_prev(key.clone())? else {
+            self.dstore
+                .kv_set(key.clone(), LockItem::record_lock_data(txid))
+                .await?;
 
             return Ok(());
         };
 
-        ensure!(
-            (!end.is_empty() || start != key) && end <= key,
-            "lock failed"
-        );
+        let lock_item = LockItem::from_data(data);
+        if lock_item.is_outdated() {
+            let _ = self.dstore.kv_delete(start.clone()).await?;
+        } else {
+            if lock_item.txid == txid {
+                return Ok(());
+            }
 
-        self.dstore.kv_set(key, Bytes::new()).await?;
+            if lock_item.is_record_lock() && start == key || lock_item.range_end > key {
+                bail!("lock failed, resource busy");
+            }
+        }
 
-        Ok(())
+        self.dstore
+            .kv_set(key, LockItem::record_lock_data(txid))
+            .await
     }
 
-    pub async fn lock_range(&self, start: Bytes, end: Bytes) -> Result<()> {
+    pub async fn lock_range(&self, txid: u64, start: Bytes, end: Bytes) -> Result<()> {
         let (start, end) = (Self::make_lock_key(start), Self::make_lock_key(end));
 
         let lprev = self.dstore.kv_get_prev(start.clone())?;
-        let lnext = self.dstore.kv_get_next(start.clone())?;
+        let lnext = self.dstore.kv_get_prev(end.clone())?;
 
         if lprev.is_none() && lnext.is_none() {
             self.dstore
-                .kv_set(start.clone(), end.clone().to_vec().into())
+                .kv_set(start.clone(), LockItem::range_lock_data(txid, end))
                 .await?;
 
             return Ok(());
         }
 
-        if let Some(prev) = lprev {
-            if prev.1.is_empty() && prev.0 == *start || prev.1 > start {
-                bail!("lock failed");
+        if let Some((key, data)) = lprev {
+            let lock_item = LockItem::from_data(data);
+            if lock_item.is_outdated() {
+                let _ = self.dstore.kv_delete(key.clone()).await?;
+            } else {
+                if lock_item.txid != txid
+                    && (lock_item.is_record_lock() && key == start || lock_item.range_end > start)
+                {
+                    bail!("lock failed, resource busy");
+                }
             }
         }
 
-        if let Some(next) = lnext {
-            if next.1.is_empty() && next.0 == *start || next.0 > *start {
-                bail!("lock failed");
+        if let Some((key, data)) = lnext {
+            let lock_item = LockItem::from_data(data);
+            if lock_item.is_outdated() {
+                let _ = self.dstore.kv_delete(key.clone()).await?;
+            } else {
+                if lock_item.txid == txid {
+                    return Ok(());
+                }
+
+                if !(lock_item.is_record_lock() && key == end) {
+                    bail!("lock failed, resource busy");
+                }
             }
         }
 
-        self.dstore.kv_set(start, end.to_vec().into()).await
+        self.dstore
+            .kv_set(start, LockItem::range_lock_data(txid, end))
+            .await
     }
 
     pub async fn unlock(&self, key: Bytes) -> Result<()> {

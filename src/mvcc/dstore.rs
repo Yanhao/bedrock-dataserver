@@ -16,19 +16,57 @@ impl<'a> Dstore<'a> {
     }
 
     pub fn kv_get(&self, key: Bytes) -> Result<Option<Bytes>> {
-        self.shard.kv_store.kv_get(key)
+        self.shard.kv_store.kv_get(key.clone()).inspect_err(|e| {
+            error!(
+                msg = "kv get failed.",
+                err = ?e,
+                op = "kv_get",
+                key = unsafe { String::from_utf8_unchecked(key.to_vec()) },
+            )
+        })
     }
 
     pub fn kv_get_prev(&self, key: Bytes) -> Result<Option<(Bytes, Bytes)>> {
-        self.shard.kv_store.kv_get_prev_or_eq(key)
+        self.shard
+            .kv_store
+            .kv_get_prev_or_eq(key.clone())
+            .inspect_err(|e| {
+                error!(
+                    msg = "kv_get_prev failed.",
+                    err = ?e,
+                    op = "kv_get_prev",
+                    key = unsafe { String::from_utf8_unchecked(key.to_vec()) },
+                )
+            })
     }
 
+    #[allow(dead_code)]
     pub fn kv_get_next(&self, key: Bytes) -> Result<Option<(Bytes, Bytes)>> {
-        self.shard.kv_store.kv_get_next_or_eq(key)
+        self.shard
+            .kv_store
+            .kv_get_next_or_eq(key.clone())
+            .inspect_err(|e| {
+                error!(
+                    msg = "kv_get_next failed.",
+                    err = ?e,
+                    op = "kv_get_next",
+                    key = unsafe { String::from_utf8_unchecked(key.to_vec()) },
+                )
+            })
     }
 
     pub fn kv_scan(&self, prefix: Bytes) -> Result<impl Iterator<Item = (Bytes, Bytes)> + '_> {
-        self.shard.kv_store.kv_scan(prefix)
+        self.shard
+            .kv_store
+            .kv_scan(prefix.clone())
+            .inspect_err(|e| {
+                error!(
+                    msg = "kv_scan failed.",
+                    err = ?e,
+                    op = "kv_scan",
+                    prefix = unsafe { String::from_utf8_unchecked(prefix.to_vec()) },
+                )
+            })
     }
 
     pub async fn kv_set(&self, key: Bytes, value: Bytes) -> Result<()> {
