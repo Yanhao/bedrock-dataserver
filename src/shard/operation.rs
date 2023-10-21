@@ -4,7 +4,8 @@ use std::fmt;
 pub enum Operation {
     Noop = 0,
     Set = 1,
-    Del = 2,
+    SetNs = 2,
+    Del = 3,
 }
 
 impl Operation {
@@ -12,6 +13,7 @@ impl Operation {
         match self {
             Operation::Noop => "noop",
             Operation::Set => "set",
+            Operation::SetNs => "setns",
             Operation::Del => "del",
         }
     }
@@ -29,6 +31,8 @@ impl From<String> for Operation {
             Self::Noop
         } else if value == "set" {
             Self::Set
+        } else if value == "setns" {
+            Self::SetNs
         } else if value == "del" {
             Self::Del
         } else {

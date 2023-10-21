@@ -1,13 +1,16 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use tokio::sync::mpsc::{self, Receiver};
+use tokio::{select, sync::broadcast, sync::mpsc::Receiver, time::MissedTickBehavior};
 use tracing::{error, info};
 
-use crate::shard::{EntryWithNotifierSender, Shard, ShardError};
+use crate::{
+    mvcc::GarbageCollector,
+    shard::{EntryWithNotifierSender, Shard, ShardError},
+};
 
 pub struct Leader {
-    stop_ch: Option<mpsc::Sender<()>>,
+    stop_ch: Option<broadcast::Sender<()>>,
 }
 
 impl Default for Leader {
@@ -26,8 +29,11 @@ impl Leader {
         shard: Arc<Shard>,
         mut input_rx: Receiver<EntryWithNotifierSender>,
     ) -> Result<()> {
-        let (tx, mut rx) = mpsc::channel(1);
+        let (tx, mut rx1) = broadcast::channel(1);
         self.stop_ch.replace(tx);
+
+        let mut rx2 = rx1.resubscribe();
+        let shard_cpy = shard.clone();
 
         tokio::spawn(async move {
             let shard_id = shard.shard_id();
@@ -35,7 +41,7 @@ impl Leader {
 
             'outer: loop {
                 tokio::select! {
-                    _ = rx.recv() => {
+                    _ = rx1.recv() => {
                         break;
                     }
                     e = input_rx.recv() => {
@@ -81,12 +87,30 @@ impl Leader {
             info!("stop append entry task for shard: {}", shard_id);
         });
 
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(tokio::time::Duration::from_secs(10 * 60));
+            ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
+
+            let mut rx3 = rx2.resubscribe();
+
+            loop {
+                select! {
+                    _ = rx2.recv() => {
+                        break;
+                    }
+                    _ = ticker.tick() => {
+                        GarbageCollector::do_gc(shard_cpy.clone(), &mut rx3).await;
+                    }
+                }
+            }
+        });
+
         Ok(())
     }
 
     pub async fn stop(&self) -> Result<()> {
         if let Some(s) = self.stop_ch.as_ref() {
-            s.send(()).await?;
+            s.send(())?;
         }
 
         Ok(())

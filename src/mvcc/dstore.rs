@@ -110,6 +110,47 @@ impl<'a> Dstore<'a> {
         Ok(())
     }
 
+    pub async fn kv_set_ns(&self, key: Bytes, value: Bytes) -> Result<()> {
+        let mut entry_with_notifier = self
+            .shard
+            .process_write(shard::Operation::Set, &key, &value.to_vec())
+            .await
+            .inspect_err(|e| {
+                error!(
+                    msg = "process wirte failed.",
+                    err = ?e,
+                    op = "kv_setns",
+                    key = unsafe { String::from_utf8_unchecked(key.to_vec()) },
+                )
+            })?;
+
+        debug!("start wait result");
+        entry_with_notifier.wait_result().await.inspect_err(|e| {
+            error!(
+                msg = "write wait result failed.",
+                err = ?e,
+                op = "kv_set",
+                key = unsafe { String::from_utf8_unchecked(key.to_vec()) },
+            )
+        })?;
+        let _ = self
+            .shard
+            .apply_entry(&entry_with_notifier.entry)
+            .await
+            .inspect_err(|e| {
+                error!(
+                    msg = "apply entry failed.",
+                    err = ?e,
+                    op = "kv_set",
+                    key = unsafe { String::from_utf8_unchecked(key.to_vec()) },
+                )
+            })?;
+
+        debug!(" wait result successed");
+
+        Ok(())
+    }
+
     pub async fn kv_delete(&self, key: Bytes) -> Result<Option<Bytes>> {
         let mut entry_with_notifier = self
             .shard

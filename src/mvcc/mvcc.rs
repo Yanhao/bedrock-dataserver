@@ -6,6 +6,8 @@ use crate::shard::Shard;
 
 use super::{dstore::Dstore, lock_table::LockTable, model::KvItem, tx_table::TxTable};
 
+pub const KEY_INDEX_PREFIX: &'static str = "/keys/";
+
 #[derive(Clone)]
 pub struct MvccStore<'a> {
     dstore: Dstore<'a>,
@@ -120,7 +122,9 @@ impl<'a> MvccStore<'a> {
             )
             .await?;
 
-        self.tx_table.put_tx_item(txid, key).await
+        self.tx_table.put_tx_item(txid, key.clone()).await?;
+
+        self.dstore.kv_set_ns(key, Bytes::new()).await
     }
 
     pub async fn del_with_version(&self, txid: u64, key: Bytes) -> Result<()> {

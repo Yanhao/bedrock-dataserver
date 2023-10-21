@@ -360,6 +360,12 @@ impl Shard {
                 self.kv_store
                     .kv_set(entry.key.clone().into(), entry.value.clone().into())?;
             }
+            Operation::SetNs => {
+                if self.kv_store.kv_get(entry.key.clone().into())?.is_none() {
+                    self.kv_store
+                        .kv_set(entry.key.clone().into(), entry.value.clone().into())?;
+                }
+            }
             Operation::Del => {
                 return self.kv_store.kv_delete(entry.key.clone().into());
             }
