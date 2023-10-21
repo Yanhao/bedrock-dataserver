@@ -157,6 +157,8 @@ impl<'a> MvccStore<'a> {
             self.locks.unlock(Bytes::from(lock_key)).await?;
         }
 
+        self.tx_table.remove_tx_record(txid).await?;
+
         Ok(())
     }
 
@@ -166,6 +168,8 @@ impl<'a> MvccStore<'a> {
         for lock_key in tx_record.keys.into_iter() {
             self.locks.unlock(Bytes::from(lock_key)).await?;
         }
+
+        self.tx_table.remove_tx_record(txid).await?;
 
         Ok(())
     }

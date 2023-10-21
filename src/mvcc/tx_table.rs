@@ -55,6 +55,22 @@ impl<'a> TxTable<'a> {
         })
     }
 
+    pub(crate) async fn remove_tx_record(&self, txid: u64) -> Result<()> {
+        let keys = self
+            .dstore
+            .kv_scan(Self::make_tx_table_key_prefix(txid))?
+            .collect_vec()
+            .into_iter()
+            .map(|(key, _value)| key)
+            .collect_vec();
+
+        for key in keys.into_iter() {
+            self.dstore.kv_delete(key).await?;
+        }
+
+        Ok(())
+    }
+
     pub(crate) async fn put_tx_item(&self, txid: u64, key: Bytes) -> Result<()> {
         self.dstore
             .kv_set(
