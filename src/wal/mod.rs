@@ -1,5 +1,4 @@
 use anyhow::Result;
-use thiserror::Error;
 
 use idl_gen::replog_pb::Entry;
 
@@ -9,43 +8,6 @@ mod wal;
 mod wal_file;
 
 pub use wal::Wal;
-
-#[derive(Error, Debug)]
-pub enum WalError {
-    #[error("no such file")]
-    NoSuchFile,
-    #[error("file already exists")]
-    FileExists,
-    #[error("file not exists")]
-    FileNotExists,
-
-    #[error("wrong file path")]
-    WrongFilePath,
-
-    #[error("failed to open file")]
-    FailedToOpen,
-    #[error("failed to read file")]
-    FailedToRead,
-    #[error("failed to write file")]
-    FailedToWrite,
-    #[error("failed to seek file")]
-    FailedToSeek,
-    #[error("failed to create new file")]
-    FailedToCreateFile,
-    #[error("failed to remove file")]
-    FailedToRemoveFile,
-
-    #[error("invalid parameter")]
-    InvalidParameter,
-
-    #[error("empty wal files")]
-    EmptyWalFiles,
-    #[error("wal file full")]
-    WalFileFull,
-
-    #[error("to many entries")]
-    TooManyEntries,
-}
 
 #[allow(async_fn_in_trait)]
 pub trait WalTrait {

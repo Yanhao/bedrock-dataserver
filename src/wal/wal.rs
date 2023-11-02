@@ -2,15 +2,44 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use anyhow::{bail, ensure, Result};
+use thiserror::Error;
 use tokio::fs::{self, create_dir_all, remove_dir_all};
 use tracing::{debug, error, info};
 
 use idl_gen::replog_pb::Entry;
 
-use super::{wal_file, WalError, WalTrait};
+use super::{wal_file, WalTrait};
 use crate::config::CONFIG;
 
 const MAX_ENTRY_COUNT: u64 = 10;
+
+#[derive(Error, Debug)]
+pub enum WalError {
+    #[error("file already exists")]
+    FileExists,
+
+    #[error("failed to open file")]
+    FailedToOpen,
+    #[error("failed to read file")]
+    FailedToRead,
+    #[error("failed to write file")]
+    FailedToWrite,
+    #[error("failed to seek file")]
+    FailedToSeek,
+    #[error("failed to create new file")]
+    FailedToCreateFile,
+
+    #[error("invalid parameter")]
+    InvalidParameter,
+
+    #[error("empty wal files")]
+    EmptyWalFiles,
+    #[error("wal file full")]
+    WalFileFull,
+
+    #[error("to many entries")]
+    TooManyEntries,
+}
 
 pub struct Wal {
     shard_id: u64,

@@ -11,7 +11,7 @@ use tracing::{debug, error, info};
 
 use idl_gen::replog_pb::Entry;
 
-use crate::wal::WalError;
+use super::wal::WalError;
 
 const MAX_META_COUNT: u64 = 10;
 const WAL_MAGIC: u64 = 0x12345;
