@@ -1,7 +1,6 @@
 use std::cmp::Ordering;
 
 use anyhow::{bail, Result};
-use async_trait::async_trait;
 use prost::Message;
 use thiserror::Error;
 use tracing::warn;
@@ -61,7 +60,6 @@ impl MemLog {
     }
 }
 
-#[async_trait]
 impl WalTrait for MemLog {
     async fn entries(&mut self, lo: u64, hi: u64, max_size: u64) -> Result<Vec<Entry>> {
         let offset = self.ents[0].index;

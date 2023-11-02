@@ -1,5 +1,4 @@
 use anyhow::Result;
-use async_trait::async_trait;
 use thiserror::Error;
 
 use idl_gen::replog_pb::Entry;
@@ -48,7 +47,7 @@ pub enum WalError {
     TooManyEntries,
 }
 
-#[async_trait]
+#[allow(async_fn_in_trait)]
 pub trait WalTrait {
     async fn entries(
         &mut self,

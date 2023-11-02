@@ -2,7 +2,6 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use anyhow::{bail, ensure, Result};
-use async_trait::async_trait;
 use tokio::fs::{self, create_dir_all, remove_dir_all};
 use tracing::{debug, error, info};
 
@@ -134,7 +133,6 @@ impl Wal {
     }
 }
 
-#[async_trait]
 impl WalTrait for Wal {
     async fn entries(
         &mut self,

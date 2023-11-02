@@ -28,7 +28,7 @@ impl<'a> TxTable<'a> {
     fn make_tx_table_key(txid: u64) -> Bytes {
         let mut b = BytesMut::new();
         b.extend_from_slice(&Self::make_tx_table_key_prefix(txid));
-        b.extend_from_slice(&Utc::now().timestamp_nanos().to_be_bytes());
+        b.extend_from_slice(&Utc::now().timestamp_nanos_opt().unwrap().to_be_bytes());
         b.freeze()
     }
 
