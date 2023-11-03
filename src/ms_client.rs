@@ -17,6 +17,7 @@ use idl_gen::metaserver_pb::{HeartBeatRequest, InfoRequest, SyncShardInDataServe
 use idl_gen::service_pb::ShardMeta;
 
 use crate::config::CONFIG;
+use crate::load_status::LOAD_STATUS;
 use crate::metadata::METADATA;
 use crate::metadata::{Meta, ShardMetaIter};
 use crate::utils::{A, R};
@@ -204,6 +205,12 @@ impl MsClient {
         let req = tonic::Request::new(HeartBeatRequest {
             addr: CONFIG.read().get_self_socket_addr().to_string(),
             restarting: false,
+            free_capacity: 10240,
+            cpu_usage: LOAD_STATUS.get_cpuload(),
+            qps: 0,
+            hot_shards: vec![],
+            big_shards: vec![],
+            timestamp: Some(std::time::SystemTime::now().into()),
         });
 
         let resp = client.heart_beat(req).await?;

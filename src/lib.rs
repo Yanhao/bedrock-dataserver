@@ -72,5 +72,7 @@ pub async fn start_background_tasks() {
     mc.start().expect("start migrate cacher failed");
     migrate_cache::MIGRATE_CACHE.store(Some(std::sync::Arc::new(mc)));
 
+    let _ = load_status::LOAD_STATUS;
+
     info!("background tasks start finished");
 }
