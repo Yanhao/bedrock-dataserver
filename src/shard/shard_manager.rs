@@ -71,9 +71,10 @@ impl ShardManager {
             new_shard.kv_store.kv_set(key, value)?;
         }
 
-        shard
-            .kv_store
-            .kv_delete_range(start_key.into(), end_key.into())?;
+        shard.kv_store.kv_delete_range(
+            Shard::data_key(&start_key).into(),
+            Shard::data_key(&end_key).into(),
+        )?;
 
         new_shard.start_role().await?;
 

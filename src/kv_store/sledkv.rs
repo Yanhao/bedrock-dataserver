@@ -5,7 +5,7 @@ use anyhow::Result;
 use bytes::Bytes;
 use sled;
 use tokio::fs::remove_dir_all;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use crate::config::CONFIG;
 
@@ -21,11 +21,10 @@ pub struct KeyValue {
 }
 
 impl SledStore {
-    fn db_path(shard_id: u64) -> PathBuf {
+    fn data_dir_path(shard_id: u64) -> PathBuf {
         let data_dir: PathBuf = CONFIG.read().data_dir.as_ref().unwrap().into();
 
         data_dir
-            .join::<String>("data".into())
             .join::<String>(format!(
                 "{:08x}",
                 ((shard_id & 0xFFFFFFFF_00000000) >> 32) as u32
@@ -34,22 +33,26 @@ impl SledStore {
     }
 
     pub async fn load(shard_id: u64) -> Result<Self> {
-        info!("load shard sledkv db 0x{:016x}", shard_id);
-        let store = sled::open(Self::db_path(shard_id))?;
+        info!(
+            "load shard sledkv db 0x{:016x} from path: {:?}",
+            shard_id,
+            Self::data_dir_path(shard_id)
+        );
+        let store = sled::open(Self::data_dir_path(shard_id))?;
 
         Ok(Self { db: store })
     }
 
     pub async fn create(shard_id: u64) -> Result<()> {
         info!("create shard sledkv db 0x{:016x}", shard_id);
-        let _ = sled::open(Self::db_path(shard_id))?;
+        let _ = sled::open(Self::data_dir_path(shard_id))?;
 
         Ok(())
     }
 
     pub async fn remove(shard_id: u64) -> Result<()> {
         info!("remove shard sledkv db 0x{:016x}", shard_id);
-        remove_dir_all(Self::db_path(shard_id)).await?;
+        remove_dir_all(Self::data_dir_path(shard_id)).await?;
 
         Ok(())
     }
@@ -103,6 +106,9 @@ impl KvStore for SledStore {
 
     fn kv_set(&self, key: Bytes, value: Bytes) -> Result<()> {
         self.db.insert(key, value.to_vec())?;
+        let sz = self.db.flush()?;
+        info!("flush size: {sz}");
+
         Ok(())
     }
 
@@ -111,24 +117,24 @@ impl KvStore for SledStore {
             return Ok(None);
         };
 
+        let _ = self.db.flush()?;
+
         Ok(Some(Bytes::copy_from_slice(&value)))
     }
 
-    fn kv_delete_range(&self, start_key: Bytes, _end_key: Bytes) -> Result<()> {
-        // FIXME:
-        let start_key: Vec<u8> = start_key.into();
-
-        loop {
-            let Some((key, _)) = self.db.pop_max().unwrap() else {
-                break;
+    fn kv_delete_range(&self, start_key: Bytes, end_key: Bytes) -> Result<()> {
+        let (start_key, end_key): (&[u8], &[u8]) = (&start_key, &end_key);
+        for kv_result in self.db.range(start_key..end_key) {
+            let Ok((key, _value)) = kv_result else {
+                continue;
             };
 
-            let key: Vec<u8> = key.as_ref().to_owned();
-            if key < start_key {
-                self.db.remove(key)?;
-                break;
-            }
+            debug!("remove key {}", String::from_utf8_lossy(&key));
+
+            self.db.remove(key)?;
         }
+
+        let _ = self.db.flush()?;
 
         Ok(())
     }

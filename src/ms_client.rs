@@ -205,7 +205,7 @@ impl MsClient {
         let req = tonic::Request::new(HeartBeatRequest {
             addr: CONFIG.read().get_self_socket_addr().to_string(),
             restarting: false,
-            free_capacity: 10240,
+            free_capacity: 1024000, // FIXME:
             cpu_usage: LOAD_STATUS.get_cpuload(),
             qps: 0,
             hot_shards: vec![],

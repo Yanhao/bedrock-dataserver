@@ -6,7 +6,7 @@ use std::vec::Vec;
 
 use anyhow::{anyhow, bail, Result};
 use arc_swap::ArcSwapOption;
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use futures_util::stream;
 use num_bigint::{BigUint, ToBigUint};
 use prost::Message;
@@ -32,6 +32,8 @@ use super::Operation;
 
 const INPUT_CHANNEL_LEN: usize = 10240;
 const SHARD_META_KEY: &str = "shard_meta";
+const SHARD_META_KEY_PREFIX: &str = "/meta/";
+const SHARD_DATA_KEY_PREFIX: &str = "/data/";
 
 #[derive(Debug)]
 pub struct EntryWithNotifierSender {
@@ -118,8 +120,10 @@ impl Shard {
             meta.encode(&mut buf).unwrap();
             buf
         };
-
-        sled_db.kv_set(SHARD_META_KEY.into(), meta_buf.into())?;
+        sled_db.kv_set(
+            Self::meta_key(SHARD_META_KEY.as_bytes()).into(),
+            meta_buf.into(),
+        )?;
 
         Wal::create_wal_dir(shard_id).await?;
 
@@ -154,9 +158,15 @@ impl Shard {
             max_key: key_range.end,
         };
 
-        let mut meta_buf = Vec::new();
-        meta.encode(&mut meta_buf).unwrap();
-        sled_db.kv_set(SHARD_META_KEY.into(), meta_buf.into())?;
+        let meta_buf = {
+            let mut buf = Vec::new();
+            meta.encode(&mut buf).unwrap();
+            buf
+        };
+        sled_db.kv_set(
+            Self::meta_key(SHARD_META_KEY.as_bytes()).into(),
+            meta_buf.into(),
+        )?;
 
         METADATA.write().put_shard(shard_id, meta.clone())?;
 
@@ -169,8 +179,10 @@ impl Shard {
     pub async fn load_shard(shard_id: u64) -> Result<Self> {
         let sled_db = SledStore::load(shard_id).await.unwrap();
 
-        let raw_meta = sled_db.kv_get(SHARD_META_KEY.into())?.unwrap();
-        let meta = ShardMeta::decode(raw_meta).unwrap();
+        let meta_buf = sled_db
+            .kv_get(Self::meta_key(SHARD_META_KEY.as_bytes()).into())?
+            .unwrap();
+        let meta = ShardMeta::decode(meta_buf).unwrap();
         let wal = Wal::load_wal_by_shard_id(shard_id).await?;
         info!("shard meta: {:?}", meta);
 
@@ -246,8 +258,10 @@ impl Shard {
     pub async fn save_meta(&self) -> Result<()> {
         let mut meta_buf = Vec::new();
         self.shard_meta.read().encode(&mut meta_buf).unwrap();
-        self.kv_store
-            .kv_set(SHARD_META_KEY.into(), meta_buf.to_vec().into())?;
+        self.kv_store.kv_set(
+            Self::meta_key(SHARD_META_KEY.as_bytes()).into(),
+            meta_buf.to_vec().into(),
+        )?;
 
         METADATA
             .write()
@@ -269,6 +283,20 @@ impl Shard {
 
     pub fn max_key(&self) -> Vec<u8> {
         self.shard_meta.read().max_key.clone()
+    }
+
+    pub fn meta_key(key: &[u8]) -> Vec<u8> {
+        let mut b = BytesMut::new();
+        b.extend_from_slice(SHARD_META_KEY_PREFIX.as_bytes());
+        b.extend_from_slice(&key);
+        b.freeze().into()
+    }
+
+    pub fn data_key(key: &[u8]) -> Vec<u8> {
+        let mut b = BytesMut::new();
+        b.extend_from_slice(SHARD_DATA_KEY_PREFIX.as_bytes());
+        b.extend_from_slice(&key);
+        b.freeze().into()
     }
 
     pub fn is_key_within_shard(&self, key: &[u8]) -> bool {
@@ -357,17 +385,25 @@ impl Shard {
         match op {
             Operation::Noop => unreachable!(),
             Operation::Set => {
-                self.kv_store
-                    .kv_set(entry.key.clone().into(), entry.value.clone().into())?;
+                self.kv_store.kv_set(
+                    Shard::data_key(&entry.key).into(),
+                    entry.value.clone().into(),
+                )?;
             }
             Operation::SetNs => {
-                if self.kv_store.kv_get(entry.key.clone().into())?.is_none() {
-                    self.kv_store
-                        .kv_set(entry.key.clone().into(), entry.value.clone().into())?;
+                if self
+                    .kv_store
+                    .kv_get(Shard::data_key(&entry.key).into())?
+                    .is_none()
+                {
+                    self.kv_store.kv_set(
+                        Shard::data_key(&entry.key).into(),
+                        entry.value.clone().into(),
+                    )?;
                 }
             }
             Operation::Del => {
-                return self.kv_store.kv_delete(entry.key.clone().into());
+                return self.kv_store.kv_delete(Shard::data_key(&entry.key).into());
             }
         }
 

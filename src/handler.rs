@@ -37,7 +37,7 @@ impl DataService for RealDataServer {
             return Err(Status::invalid_argument(""));
         }
 
-        info!("create shard, req: {:?}", req);
+        info!("create shard, req: {:?}", req.get_ref());
 
         let shard_id = req.get_ref().shard_id;
 
@@ -57,7 +57,7 @@ impl DataService for RealDataServer {
             return Err(Status::invalid_argument(""));
         }
 
-        info!("delete shard, req: {:?}", req);
+        info!("delete shard, req: {:?}", req.get_ref());
 
         let shard_id = req.get_ref().shard_id;
         let shard = self.get_shard(shard_id).await?;
@@ -111,7 +111,7 @@ impl DataService for RealDataServer {
             return Err(Status::invalid_argument(""));
         }
 
-        info!("shard append log entries, req: {:?}", req);
+        info!("shard append log entries, req: {:?}", req.get_ref());
 
         let shard_id = req.get_ref().shard_id;
         let shard = self.get_shard(shard_id).await?;
@@ -125,7 +125,7 @@ impl DataService for RealDataServer {
                 next_index: 0,
             });
 
-            info!("shard_append_log resp: {:?}", resp);
+            info!("shard_append_log resp: {:?}", resp.get_ref());
             return Ok(resp);
         }
 
@@ -146,7 +146,7 @@ impl DataService for RealDataServer {
                         next_index: *next_index,
                     });
 
-                    info!("shard_append_log 1 resp: {:?}", resp);
+                    info!("shard_append_log 1 resp: {:?}", resp.get_ref());
                     return Ok(resp);
                 }
             }
@@ -159,7 +159,7 @@ impl DataService for RealDataServer {
             next_index: shard.next_index().await,
         });
 
-        info!("shard_append_log 2 resp: {:?}", resp);
+        info!("shard_append_log 2 resp: {:?}", resp.get_ref());
         Ok(resp)
     }
 
@@ -216,7 +216,7 @@ impl DataService for RealDataServer {
             return Err(Status::invalid_argument(""));
         }
 
-        info!("transfer shard leader, req: {:?}", req);
+        info!("transfer shard leader, req: {:?}", req.get_ref());
 
         let shard_id = req.get_ref().shard_id;
         let shard = self.get_shard(shard_id).await?;
@@ -335,7 +335,7 @@ impl DataService for RealDataServer {
             return Err(Status::invalid_argument(""));
         }
 
-        info!("split shard, req: {:?}", req);
+        info!("split shard, req: {:?}", req.get_ref());
 
         SHARD_MANAGER
             .split_shard(req.get_ref().shard_id, req.get_ref().new_shard_id)
@@ -373,7 +373,7 @@ impl DataService for RealDataServer {
             return Err(Status::invalid_argument(""));
         }
 
-        info!("kvget, req: {:?}", req);
+        info!("kvget, req: {:?}", req.get_ref());
 
         let shard = self.get_shard(req.get_ref().shard_id).await?;
 
@@ -427,7 +427,7 @@ impl DataService for RealDataServer {
             return Err(Status::invalid_argument(""));
         }
 
-        info!("kvset, req: {:?}", req);
+        info!("kvset, req: {:?}", req.get_ref());
         debug!("kvset: key len: {}", req.get_ref().key.len());
         debug!("kvset: value len: {}", req.get_ref().value.len());
 
@@ -459,7 +459,7 @@ impl DataService for RealDataServer {
             return Err(Status::invalid_argument(""));
         }
 
-        info!("kvdel, req: {:?}", req);
+        info!("kvdel, req: {:?}", req.get_ref());
         debug!("kvdel: key len: {}", req.get_ref().key.len());
 
         let shard = self.get_shard(req.get_ref().shard_id).await?;
