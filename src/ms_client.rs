@@ -2,12 +2,12 @@ use std::collections::HashMap;
 use std::str::pattern::Pattern;
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{ensure, Result};
 use arc_swap::access::Access;
 use arc_swap::ArcSwapOption;
 use futures_util::stream;
 use idl_gen::metaserver_pb::meta_service_client::MetaServiceClient;
-use tokio::sync::OnceCell;
+use once_cell::sync::Lazy;
 use tokio::{select, sync::mpsc, time::MissedTickBehavior};
 use tonic::transport::Channel;
 use tracing::{debug, info, warn};
@@ -22,17 +22,7 @@ use crate::metadata::METADATA;
 use crate::metadata::{Meta, ShardMetaIter};
 use crate::utils::{A, R};
 
-pub static MS_CLIENT: OnceCell<MsClient> = OnceCell::const_new();
-pub async fn get_ms_client() -> &'static MsClient {
-    MS_CLIENT
-        .get_or_init(|| async {
-            let mut ms_client = MsClient::new();
-            ms_client.start().await.unwrap();
-
-            ms_client
-        })
-        .await
-}
+pub static MS_CLIENT: Lazy<ArcSwapOption<MsClient>> = Lazy::new(|| None.into());
 
 struct SyncShardIter<T>
 where
@@ -163,8 +153,9 @@ impl MsClient {
         self.stop_ch.replace(tx);
 
         let ms_addr = CONFIG.read().metaserver_url.clone();
-        let conn = MetaServiceClient::connect(ms_addr.clone()).await?;
-        self.leader_conn.s((ms_addr, conn));
+        if let Ok(conn) = MetaServiceClient::connect(ms_addr.clone()).await {
+            self.leader_conn.s((ms_addr, conn));
+        }
 
         let leader_conn = self.leader_conn.clone();
         let follower_conns = self.follower_conns.clone();
@@ -200,6 +191,11 @@ impl MsClient {
 
 impl MsClient {
     pub async fn heartbeat(&self, _restarting: bool) -> Result<()> {
+        ensure!(
+            self.leader_conn.load().is_some(),
+            "metaserver connection not ready!"
+        );
+
         let (_, mut client) = (*self.leader_conn.load().r().clone()).clone();
 
         let req = tonic::Request::new(HeartBeatRequest {
@@ -214,12 +210,17 @@ impl MsClient {
         });
 
         let resp = client.heart_beat(req).await?;
-        debug!("heartbeat response: {:?}", resp);
+        debug!("heartbeat response: {:?}", resp.into_inner());
 
         Ok(())
     }
 
     pub async fn sync_shards_to_ms(&self) -> Result<()> {
+        ensure!(
+            self.leader_conn.load().is_some(),
+            "metaserver connection not ready!"
+        );
+
         let shards = METADATA.read().shard_iter();
         let (_, mut client) = (*self.leader_conn.load().r().clone()).clone();
 
@@ -229,7 +230,7 @@ impl MsClient {
         let resp = client
             .sync_shard_in_data_server(req)
             .await
-            .inspect_err(|e| warn!("failed to sync shard, err: {:?}", e))?;
+            .inspect_err(|e| warn!("failed to sync shard, err: {:?}", e.message()))?;
 
         debug!("sync shard response: {:?}", resp);
         info!("sync shards to metaserver finished");

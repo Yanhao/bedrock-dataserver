@@ -1,10 +1,11 @@
 use anyhow::Result;
+use arc_swap::access::Access;
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use tokio::{select, sync::mpsc, time::MissedTickBehavior};
 use tracing::{error, info};
 
-use crate::ms_client::get_ms_client;
+use crate::ms_client::MS_CLIENT;
 
 pub static HEART_BEATER: Lazy<RwLock<HeartBeater>> = Lazy::new(Default::default);
 
@@ -29,7 +30,11 @@ impl HeartBeater {
                         break;
                     }
                     _ = ticker.tick() => {
-                        if let Err(e) = get_ms_client().await.heartbeat(false).await {
+                        if MS_CLIENT.load().is_none() {
+                            continue;
+                        }
+
+                        if let Err(e) = MS_CLIENT.load().as_ref().unwrap().heartbeat(false).await {
                             error!("heartbeat to metaserver failed, error: {e}");
                         }
                     }

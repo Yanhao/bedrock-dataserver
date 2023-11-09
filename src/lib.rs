@@ -6,6 +6,8 @@
 
 use tracing::info;
 
+use crate::utils::A;
+
 pub mod config;
 pub mod ds_client;
 pub mod error;
@@ -70,9 +72,13 @@ pub async fn start_background_tasks() {
 
     let mut mc = migrate_cache::MigrateCacher::new();
     mc.start().expect("start migrate cacher failed");
-    migrate_cache::MIGRATE_CACHE.store(Some(std::sync::Arc::new(mc)));
+    migrate_cache::MIGRATE_CACHE.s(mc);
 
     let _ = load_status::LOAD_STATUS;
+
+    let mut ms_client = ms_client::MsClient::new();
+    ms_client.start().await.expect("start ms_client failed");
+    ms_client::MS_CLIENT.s(ms_client);
 
     info!("background tasks start finished");
 }
