@@ -1,3 +1,3 @@
 [submodule "proto"]
 	path = proto
-	url = https://git.sr.ht/~moyanhao/bedrock-proto
+	url = https://github.com/Yanhao/bedrock-proto.git
