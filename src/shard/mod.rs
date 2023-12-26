@@ -16,6 +16,9 @@ pub enum ShardError {
     #[error("not leader")]
     NotLeader,
 
+    #[error("not leader with timestamp")]
+    NotLeaderWithTs(std::time::SystemTime),
+
     #[error("append log failed")]
     FailedToAppendLog,
 

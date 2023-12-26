@@ -122,6 +122,7 @@ impl DataService for RealDataServer {
         if shard.leader_change_ts() > leader_change_leader_ts {
             let resp = Response::new(ShardAppendLogResponse {
                 is_old_leader: true,
+                last_leader_change_ts: Some(shard.leader_change_ts().into()),
                 next_index: 0,
             });
 
@@ -129,7 +130,9 @@ impl DataService for RealDataServer {
             return Ok(resp);
         }
 
-        shard.update_leader_change_ts(leader_change_leader_ts);
+        shard
+            .update_membership(false, leader_change_leader_ts, None)
+            .map_err(|_| Status::internal("update membership failed"))?;
 
         for e in req.get_ref().entries.iter() {
             let e = replog_pb::Entry {
@@ -143,6 +146,7 @@ impl DataService for RealDataServer {
                     warn!("log index lag, next_index: {next_index}");
                     let resp = Response::new(ShardAppendLogResponse {
                         is_old_leader: false,
+                        last_leader_change_ts: None,
                         next_index: *next_index,
                     });
 
@@ -156,6 +160,7 @@ impl DataService for RealDataServer {
 
         let resp = Response::new(ShardAppendLogResponse {
             is_old_leader: false,
+            last_leader_change_ts: None,
             next_index: shard.next_index().await,
         });
 
@@ -228,13 +233,14 @@ impl DataService for RealDataServer {
             .map(|x| x.parse().unwrap())
             .collect::<Vec<_>>();
 
-        shard.set_replicates(&socket_addrs);
-        shard.set_is_leader(true);
-        shard.update_leader_change_ts(req.get_ref().leader_change_ts.to_owned().unwrap().into());
         shard
-            .save_meta()
-            .await
-            .map_err(|_| Status::internal("save shard meta failed"))?;
+            .update_membership(
+                true,
+                req.get_ref().leader_change_ts.to_owned().unwrap().into(),
+                Some(&socket_addrs),
+            )
+            .map_err(|_| Status::internal("update membership failed"))?;
+
         shard.switch_role_to_leader().await.unwrap();
 
         info!("successfully transfer shard leader");

@@ -26,6 +26,7 @@ use crate::kv_store::{self, KvStore, SledStore};
 use crate::metadata::{Meta, METADATA};
 use crate::role::{Follower, Leader, Role};
 use crate::shard::ShardError;
+use crate::utils::R;
 use crate::wal::{Wal, WalTrait};
 
 use super::Operation;
@@ -69,6 +70,7 @@ pub struct Shard {
     pub replog: Arc<RwLock<Wal>>,
 
     write_lock: Mutex<()>,
+    membership_update_lock: parking_lot::Mutex<()>,
 
     deleting: AtomicBool,
     installing_snapshot: AtomicBool,
@@ -89,6 +91,7 @@ impl Shard {
             installing_snapshot: false.into(),
             input: None.into(),
             write_lock: Mutex::new(()),
+            membership_update_lock: parking_lot::Mutex::new(()),
 
             role: RwLock::new(Role::NotReady),
         }
@@ -233,31 +236,37 @@ impl Shard {
     }
 
     pub fn mark_deleting(&self) {
-        self.deleting.store(true, Ordering::Relaxed)
+        self.deleting.store(true, Ordering::Relaxed);
     }
+
     pub fn mark_installing_snapshot(&self, i: bool) {
         self.installing_snapshot.store(i, Ordering::Relaxed);
     }
-    pub fn set_is_leader(&self, l: bool) {
-        self.shard_meta.write().is_leader = l;
-    }
-    pub fn update_leader_change_ts(&self, t: std::time::SystemTime) {
-        self.shard_meta.write().leader_change_ts = Some(t.into());
-    }
-    pub fn set_replicates(&self, replicates: &[SocketAddr]) {
-        self.shard_meta.write().replicates = replicates.iter().map(|s| s.to_string()).collect();
+
+    pub fn update_membership(
+        &self,
+        is_leader: bool,
+        leader_update_ts: std::time::SystemTime,
+        replicates: Option<&[SocketAddr]>,
+    ) -> Result<()> {
+        let _lg = self.membership_update_lock.lock();
+        let mut meta = self.shard_meta.read().clone();
+
+        meta.is_leader = is_leader;
+        meta.leader_change_ts = Some(leader_update_ts.into());
+        if let Some(replicates) = replicates {
+            meta.replicates = replicates.iter().map(|s| s.to_string()).collect();
+        }
+        self.save_meta(&meta)?;
+
+        *self.shard_meta.write() = meta;
+
+        Ok(())
     }
 
-    pub async fn next_index(&self) -> u64 {
-        self.replog.read().await.next_index()
-    }
-    pub async fn reset_replog(&self, next_index: u64) -> Result<()> {
-        self.replog.write().await.compact(next_index).await
-    }
-
-    pub async fn save_meta(&self) -> Result<()> {
+    fn save_meta(&self, meta: &ShardMeta) -> Result<()> {
         let mut meta_buf = Vec::new();
-        self.shard_meta.read().encode(&mut meta_buf).unwrap();
+        meta.encode(&mut meta_buf).unwrap();
         self.kv_store.kv_set(
             Self::meta_key(SHARD_META_KEY.as_bytes()).into(),
             meta_buf.to_vec().into(),
@@ -268,6 +277,13 @@ impl Shard {
             .put_shard(self.shard_id(), self.shard_meta.read().clone())?;
 
         Ok(())
+    }
+
+    pub async fn next_index(&self) -> u64 {
+        self.replog.read().await.next_index()
+    }
+    pub async fn reset_replog(&self, next_index: u64) -> Result<()> {
+        self.replog.write().await.compact(next_index).await
     }
 }
 
@@ -440,7 +456,9 @@ impl Shard {
 
         if resp.get_ref().is_old_leader {
             warn!("failed to append log, not leader");
-            return Err(ShardError::NotLeader);
+            return Err(ShardError::NotLeaderWithTs(
+                resp.get_ref().last_leader_change_ts.r().clone().into(),
+            ));
         }
 
         let mut next_index = resp.get_ref().next_index;
