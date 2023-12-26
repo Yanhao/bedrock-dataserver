@@ -58,37 +58,6 @@ impl SledStore {
     }
 }
 
-impl SledStore {
-    pub fn take_snapshot(&self) -> Result<impl Iterator<Item = (Bytes, bytes::Bytes)>> {
-        info!("creat snapshot iterator ...");
-
-        for i in self.db.iter() {
-            if let Ok((k, v)) = i {
-                info!("iterator: key: {:?}, value: {:?}", k.as_ref(), v.as_ref());
-            }
-        }
-
-        Ok(StoreIter {
-            iter: self.db.iter(),
-        })
-    }
-
-    pub fn install_snapshot(&self, entries: Vec<(Bytes, bytes::Bytes)>) -> Result<()> {
-        for (key, value) in entries.into_iter() {
-            info!("install_snapshot, key: {:?}, value: {:?}", key, value);
-
-            self.kv_set(key.clone(), value.clone()).inspect_err(|e| {
-                error!(
-                    "install_snapshot, kv_set failed, err: {e}, key: {:?}, value: {:?}",
-                    key, value,
-                )
-            })?;
-        }
-
-        Ok(())
-    }
-}
-
 impl Clone for SledStore {
     fn clone(&self) -> Self {
         Self {
@@ -163,11 +132,40 @@ impl KvStore for SledStore {
         Ok(Some((key.to_vec().into(), Bytes::copy_from_slice(&value))))
     }
 
-    fn kv_scan(&self, prefix: Bytes) -> Result<impl Iterator<Item = (Bytes, bytes::Bytes)>> {
+    fn kv_scan(&self, prefix: Bytes) -> Result<impl Iterator<Item = (Bytes, Bytes)>> {
         Ok(self.db.scan_prefix(prefix).filter_map(|x| {
             x.ok()
                 .map(|(k, v)| (k.as_ref().to_vec().into(), v.as_ref().to_owned().into()))
         }))
+    }
+
+    fn take_snapshot(&self) -> Result<impl Iterator<Item = (Bytes, Bytes)>> {
+        info!("creat snapshot iterator ...");
+
+        for i in self.db.iter() {
+            if let Ok((k, v)) = i {
+                info!("iterator: key: {:?}, value: {:?}", k.as_ref(), v.as_ref());
+            }
+        }
+
+        Ok(StoreIter {
+            iter: self.db.iter(),
+        })
+    }
+
+    fn install_snapshot(&self, entries: Vec<(Bytes, bytes::Bytes)>) -> Result<()> {
+        for (key, value) in entries.into_iter() {
+            info!("install_snapshot, key: {:?}, value: {:?}", key, value);
+
+            self.kv_set(key.clone(), value.clone()).inspect_err(|e| {
+                error!(
+                    "install_snapshot, kv_set failed, err: {e}, key: {:?}, value: {:?}",
+                    key, value,
+                )
+            })?;
+        }
+
+        Ok(())
     }
 }
 
