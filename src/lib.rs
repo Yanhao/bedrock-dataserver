@@ -1,4 +1,3 @@
-#![feature(result_option_inspect)]
 #![feature(impl_trait_in_assoc_type)]
 #![feature(async_closure)]
 #![feature(pattern)]
