@@ -14,8 +14,13 @@ pub trait KvStore: Clone {
     fn kv_get_prev_or_eq(&self, key: Bytes) -> Result<Option<(Bytes, Bytes)>>;
     fn kv_get_next_or_eq(&self, key: Bytes) -> Result<Option<(Bytes, Bytes)>>;
 
-    fn kv_scan(&self, prefix: Bytes) -> Result<impl Iterator<Item = (Bytes, Bytes)>>;
+    fn kv_scan(&self, prefix: Bytes) -> Result<impl Iterator<Item = (Bytes, Bytes)> + Send>;
+    fn kv_range(
+        &self,
+        start_key: Bytes,
+        end_key: Bytes,
+    ) -> impl Iterator<Item = (Bytes, Bytes)> + Send;
 
-    fn take_snapshot(&self) -> Result<impl Iterator<Item = (Bytes, Bytes)>>;
+    fn take_snapshot(&self) -> Result<impl Iterator<Item = (Bytes, Bytes)> + Send>;
     fn install_snapshot(&self, entries: Vec<(Bytes, Bytes)>) -> Result<()>;
 }

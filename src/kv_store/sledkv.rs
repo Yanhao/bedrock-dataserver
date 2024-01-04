@@ -139,6 +139,20 @@ impl KvStore for SledStore {
         }))
     }
 
+    fn kv_range(
+        &self,
+        start_key: Bytes,
+        end_key: Bytes,
+    ) -> impl Iterator<Item = (Bytes, Bytes)> + Send {
+        self.db
+            .range(start_key..end_key)
+            .into_iter()
+            .filter_map(|kv| {
+                kv.ok()
+                    .map(|(k, v)| (k.as_ref().to_vec().into(), v.as_ref().to_owned().into()))
+            })
+    }
+
     fn take_snapshot(&self) -> Result<impl Iterator<Item = (Bytes, Bytes)>> {
         info!("creat snapshot iterator ...");
 
