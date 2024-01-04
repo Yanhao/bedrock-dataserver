@@ -7,6 +7,7 @@ use std::vec::Vec;
 use anyhow::{anyhow, bail, Result};
 use arc_swap::ArcSwapOption;
 use bytes::{Bytes, BytesMut};
+use futures::executor::block_on;
 use futures_util::stream;
 use num_bigint::{BigUint, ToBigUint};
 use prost::Message;
@@ -22,7 +23,7 @@ use idl_gen::service_pb::{
 
 use crate::config::CONFIG;
 use crate::ds_client::CONNECTIONS;
-use crate::kv_store::{self, KvStore, SledStore};
+use crate::kv_store::{KvStore, SledStore};
 use crate::metadata::{Meta, METADATA};
 use crate::role::{Follower, Leader, Role};
 use crate::shard::ShardError;
@@ -66,8 +67,8 @@ pub struct Shard {
 
     input: ArcSwapOption<mpsc::Sender<EntryWithNotifierSender>>,
 
-    pub kv_store: SledStore,
-    pub replog: Arc<RwLock<Wal>>,
+    kv_store: Option<SledStore>,
+    replog: Option<RwLock<Wal>>,
 
     write_lock: Mutex<()>,
     membership_update_lock: parking_lot::Mutex<()>,
@@ -78,6 +79,22 @@ pub struct Shard {
     role: RwLock<Role>,
 }
 
+impl Drop for Shard {
+    fn drop(&mut self) {
+        let _ = self.kv_store.take();
+        let _ = self.replog.take();
+
+        if !self.is_deleting() {
+            return;
+        }
+
+        let shard_id = self.shard_id();
+        block_on(async move {
+            let _ = Shard::remove_shard(shard_id).await;
+        });
+    }
+}
+
 impl Shard {
     fn new(kv_store: SledStore, meta: ShardMeta, wal: Wal) -> Self {
         let next_index = wal.next_index();
@@ -85,8 +102,8 @@ impl Shard {
 
         Shard {
             shard_meta: Arc::new(parking_lot::RwLock::new(meta)),
-            kv_store: kv_store.clone(),
-            replog: Arc::new(RwLock::new(wal)),
+            kv_store: Some(kv_store.clone()),
+            replog: Some(RwLock::new(wal)),
             deleting: false.into(),
             installing_snapshot: false.into(),
             input: None.into(),
@@ -192,7 +209,7 @@ impl Shard {
         Ok(Self::new(sled_db, meta, wal))
     }
 
-    pub async fn remove_shard(shard_id: u64) -> Result<()> {
+    async fn remove_shard(shard_id: u64) -> Result<()> {
         SledStore::remove(shard_id).await?;
         Wal::remove_wal(shard_id).await?;
 
@@ -208,6 +225,9 @@ impl Shard {
     }
     pub fn leader(&self) -> String {
         self.shard_meta.read().leader.clone()
+    }
+    pub fn is_leader(&self) -> bool {
+        self.shard_meta.read().is_leader
     }
     pub fn leader_change_ts(&self) -> std::time::SystemTime {
         self.shard_meta
@@ -225,20 +245,16 @@ impl Shard {
             .map(|a| a.parse().unwrap())
             .collect()
     }
+
     pub fn is_deleting(&self) -> bool {
         self.deleting.load(Ordering::Relaxed)
     }
     pub fn is_installing_snapshot(&self) -> bool {
         self.installing_snapshot.load(Ordering::Relaxed)
     }
-    pub fn is_leader(&self) -> bool {
-        self.shard_meta.read().is_leader
-    }
-
     pub fn mark_deleting(&self) {
         self.deleting.store(true, Ordering::Relaxed);
     }
-
     pub fn mark_installing_snapshot(&self, i: bool) {
         self.installing_snapshot.store(i, Ordering::Relaxed);
     }
@@ -267,7 +283,7 @@ impl Shard {
     fn save_meta(&self, meta: &ShardMeta) -> Result<()> {
         let mut meta_buf = Vec::new();
         meta.encode(&mut meta_buf).unwrap();
-        self.kv_store.kv_set(
+        self.get_kv_store().kv_set(
             Self::meta_key(SHARD_META_KEY.as_bytes()).into(),
             meta_buf.to_vec().into(),
         )?;
@@ -279,11 +295,15 @@ impl Shard {
         Ok(())
     }
 
+    pub fn get_kv_store(&self) -> &(impl KvStore + Send) {
+        self.kv_store.as_ref().unwrap()
+    }
+
     pub async fn next_index(&self) -> u64 {
-        self.replog.read().await.next_index()
+        self.replog.r().read().await.next_index()
     }
     pub async fn reset_replog(&self, next_index: u64) -> Result<()> {
-        self.replog.write().await.compact(next_index).await
+        self.replog.r().write().await.compact(next_index).await
     }
 }
 
@@ -324,14 +344,15 @@ impl Shard {
         min <= key && key < max
     }
 
-    pub async fn create_split_iter(
-        &self,
-        start_key: &[u8],
-        end_key: &[u8],
-    ) -> Result<impl Iterator<Item = (Bytes, Bytes)>> {
-        Ok(kv_store::StoreIter {
-            iter: self.kv_store.db.range(start_key..end_key),
-        })
+    pub async fn create_split_iter<'a, 'b>(
+        &'a self,
+        start_key: &'b [u8],
+        end_key: &'b [u8],
+    ) -> Result<impl Iterator<Item = (Bytes, Bytes)> + Send + 'a> {
+        Ok(self.get_kv_store().kv_range(
+            Bytes::from(start_key.to_vec()),
+            Bytes::from(end_key.to_vec()),
+        ))
     }
 }
 
@@ -353,6 +374,7 @@ impl Shard {
         // TODO: use group commit to improve performance
         let index = self
             .replog
+            .r()
             .write()
             .await
             .append(vec![entry.clone()], false)
@@ -378,7 +400,7 @@ impl Shard {
     }
 
     pub async fn append_log_entry(&self, entry: &Entry) -> Result<()> {
-        let next_index = self.replog.read().await.next_index();
+        let next_index = self.replog.r().read().await.next_index();
         info!("last_index: {next_index}, entry index: {}", entry.index);
         if next_index != entry.index {
             bail!(ShardError::LogIndexLag(next_index));
@@ -386,6 +408,7 @@ impl Shard {
 
         // TODO: use group commit to improve performance
         self.replog
+            .r()
             .write()
             .await
             .append(vec![entry.clone()], true)
@@ -401,25 +424,27 @@ impl Shard {
         match op {
             Operation::Noop => unreachable!(),
             Operation::Set => {
-                self.kv_store.kv_set(
+                self.get_kv_store().kv_set(
                     Shard::data_key(&entry.key).into(),
                     entry.value.clone().into(),
                 )?;
             }
             Operation::SetNs => {
                 if self
-                    .kv_store
+                    .get_kv_store()
                     .kv_get(Shard::data_key(&entry.key).into())?
                     .is_none()
                 {
-                    self.kv_store.kv_set(
+                    self.get_kv_store().kv_set(
                         Shard::data_key(&entry.key).into(),
                         entry.value.clone().into(),
                     )?;
                 }
             }
             Operation::Del => {
-                return self.kv_store.kv_delete(Shard::data_key(&entry.key).into());
+                return self
+                    .get_kv_store()
+                    .kv_delete(Shard::data_key(&entry.key).into());
             }
         }
 
@@ -471,6 +496,7 @@ impl Shard {
 
             let entries_res = self
                 .replog
+                .r()
                 .write()
                 .await
                 .entries(next_index, en.index, 1024)
@@ -525,7 +551,7 @@ impl Shard {
         mut client: data_service_client::DataServiceClient<tonic::transport::Channel>,
         addr: &str,
     ) -> Result<u64 /*last_wal_index */> {
-        let snap = self.kv_store.take_snapshot()?;
+        let snap = self.get_kv_store().take_snapshot()?;
 
         let next_wal_index = self.next_index().await; // FIXME: keep atomic with above
 

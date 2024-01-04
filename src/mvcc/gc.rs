@@ -7,6 +7,7 @@ use tokio::sync::broadcast;
 use super::dstore::Dstore;
 use super::model::KvItem;
 use super::mvcc::KEY_INDEX_PREFIX;
+use crate::kv_store::KvStore;
 use crate::shard::Shard;
 
 #[allow(dead_code)]
@@ -21,33 +22,28 @@ impl GarbageCollector {
     }
 
     pub async fn do_gc(shard: Arc<Shard>, stop_ch: &mut broadcast::Receiver<()>) {
-        let it = shard.kv_store.db.scan_prefix(KEY_INDEX_PREFIX.as_bytes());
+        let it = shard
+            .get_kv_store()
+            .kv_scan(KEY_INDEX_PREFIX.as_bytes().into())
+            .unwrap();
 
-        for key in it {
+        for kv in it {
             if stop_ch.try_recv().is_ok() {
                 break;
             }
 
-            let Ok((key, _value)) = key else {
-                continue;
-            };
-
-            Self::do_gc_one_key(shard.clone(), key.as_ref().to_owned().into()).await;
+            Self::do_gc_one_key(shard.clone(), kv.0.as_ref().to_owned().into()).await;
         }
     }
 
     async fn do_gc_one_key(shard: Arc<Shard>, key: Bytes) {
         let it = shard
-            .kv_store
-            .db
-            .scan_prefix(Self::make_versioned_key_prefix(key.clone()));
+            .get_kv_store()
+            .kv_scan(Self::make_versioned_key_prefix(key.clone()))
+            .unwrap();
 
-        for key in it {
-            let Ok((_key, value)) = key else {
-                continue;
-            };
-
-            let Ok(item) = serde_json::from_slice::<KvItem>(&value) else {
+        for kv in it {
+            let Ok(item) = serde_json::from_slice::<KvItem>(&kv.1) else {
                 continue;
             };
 

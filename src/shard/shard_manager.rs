@@ -68,10 +68,10 @@ impl ShardManager {
 
         let iter = shard.create_split_iter(&start_key, &end_key).await?;
         for (key, value) in iter.into_iter() {
-            new_shard.kv_store.kv_set(key, value)?;
+            new_shard.get_kv_store().kv_set(key, value)?;
         }
 
-        shard.kv_store.kv_delete_range(
+        shard.get_kv_store().kv_delete_range(
             Shard::data_key(&start_key).into(),
             Shard::data_key(&end_key).into(),
         )?;
@@ -85,16 +85,15 @@ impl ShardManager {
         let shard_a = self.get_shard(shard_id_a).await?;
         let shard_b = self.get_shard(shard_id_b).await?;
 
-        let iter = shard_b.kv_store.take_snapshot()?;
+        let iter = shard_b.get_kv_store().take_snapshot()?;
 
         for (key, value) in iter.into_iter() {
-            shard_a.kv_store.kv_set(key, value)?;
+            shard_a.get_kv_store().kv_set(key, value)?;
         }
 
+        shard_b.mark_deleting();
         shard_b.stop_role().await?;
-
         self.remove_shard(shard_id_b).await?;
-        Shard::remove_shard(shard_b.shard_id()).await?;
 
         Ok(())
     }

@@ -17,7 +17,7 @@ impl<'a> Dstore<'a> {
 
     pub fn kv_get(&self, key: Bytes) -> Result<Option<Bytes>> {
         self.shard
-            .kv_store
+            .get_kv_store()
             .kv_get(Shard::data_key(&key).into())
             .inspect_err(|e| {
                 error!(
@@ -31,7 +31,7 @@ impl<'a> Dstore<'a> {
 
     pub fn kv_get_prev(&self, key: Bytes) -> Result<Option<(Bytes, Bytes)>> {
         self.shard
-            .kv_store
+            .get_kv_store()
             .kv_get_prev_or_eq(Shard::data_key(&key).into())
             .inspect_err(|e| {
                 error!(
@@ -46,7 +46,7 @@ impl<'a> Dstore<'a> {
     #[allow(dead_code)]
     pub fn kv_get_next(&self, key: Bytes) -> Result<Option<(Bytes, Bytes)>> {
         self.shard
-            .kv_store
+            .get_kv_store()
             .kv_get_next_or_eq(Shard::data_key(&key).into())
             .inspect_err(|e| {
                 error!(
@@ -60,7 +60,7 @@ impl<'a> Dstore<'a> {
 
     pub fn kv_scan(&self, prefix: Bytes) -> Result<impl Iterator<Item = (Bytes, Bytes)> + '_> {
         self.shard
-            .kv_store
+            .get_kv_store()
             .kv_scan(Shard::data_key(&prefix).into())
             .inspect_err(|e| {
                 error!(

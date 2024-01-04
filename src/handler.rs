@@ -67,7 +67,6 @@ impl DataService for RealDataServer {
             .stop_role()
             .await
             .map_err(|e| Status::internal(format!("{e}")))?;
-
         SHARD_MANAGER
             .remove_shard(shard_id)
             .await
@@ -196,7 +195,7 @@ impl DataService for RealDataServer {
 
             // shard.kv_store.clear_data().await;
             shard
-                .kv_store
+                .get_kv_store()
                 .install_snapshot(
                     piece
                         .entries
@@ -259,7 +258,7 @@ impl DataService for RealDataServer {
             let start_time = std::time::Instant::now();
 
             let shard = self.get_shard(first.shard_id_from).await?;
-            let snap = shard.kv_store.take_snapshot().unwrap();
+            let snap = shard.get_kv_store().take_snapshot().unwrap();
 
             let mut client = CONNECTIONS.get_client(&first.target_address).await.unwrap();
 
@@ -290,7 +289,10 @@ impl DataService for RealDataServer {
 
             shard.mark_deleting();
             shard.stop_role().await.unwrap();
-            Shard::remove_shard(shard.shard_id()).await.unwrap();
+            SHARD_MANAGER
+                .remove_shard(shard.shard_id())
+                .await
+                .map_err(|_| Status::internal(""))?;
 
             migrate_cache::MIGRATE_CACHE.load().as_ref().unwrap().put(
                 first.shard_id_from,
@@ -321,7 +323,7 @@ impl DataService for RealDataServer {
 
                 for kv in piece.entries.into_iter() {
                     shard
-                        .kv_store
+                        .get_kv_store()
                         .kv_set(kv.key.into(), kv.value.to_vec().into())
                         .unwrap();
                 }
