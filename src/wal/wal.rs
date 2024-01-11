@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::sync::Arc;
 
 use anyhow::{bail, ensure, Result};
 use thiserror::Error;
@@ -41,13 +42,13 @@ pub enum WalError {
     TooManyEntries,
 }
 
-pub struct Wal {
+struct WalInner {
     shard_id: u64,
     wal_files: Vec<wal_file::WalFile>,
     dir: PathBuf,
 }
 
-impl Wal {
+impl WalInner {
     fn wal_file_suffix(path: impl AsRef<Path>) -> u64 {
         let path = path.as_ref().as_os_str().to_str().unwrap();
         let suffix_str = path.split('.').last().unwrap();
@@ -66,7 +67,7 @@ impl Wal {
             .join::<String>(format!("{:08x}", (shard_id & 0x00000000_FFFFFFFF) as u32))
     }
 
-    async fn load(dir: impl AsRef<Path>, shard_id: u64) -> Result<Wal> {
+    async fn load(dir: impl AsRef<Path>, shard_id: u64) -> Result<WalInner> {
         ensure!(dir.as_ref().exists(), "path not exists");
         ensure!(dir.as_ref().is_dir(), "path is not directory");
 
@@ -79,7 +80,7 @@ impl Wal {
             .collect::<Result<Vec<_>, _>>()?;
 
         if wal_file_paths.is_empty() {
-            return Ok(Wal {
+            return Ok(WalInner {
                 shard_id,
                 wal_files: vec![],
                 dir: dir.as_ref().to_owned(),
@@ -102,7 +103,7 @@ impl Wal {
             );
         }
 
-        Ok(Wal {
+        Ok(WalInner {
             shard_id,
             wal_files,
             dir: dir.as_ref().to_owned(),
@@ -117,9 +118,9 @@ impl Wal {
         Ok(())
     }
 
-    pub async fn load_wal_by_shard_id(shard_id: u64) -> Result<Wal> {
+    pub async fn load_wal_by_shard_id(shard_id: u64) -> Result<WalInner> {
         let wal_manager_dir = Self::wal_dir_path(shard_id);
-        Wal::load(wal_manager_dir, shard_id).await
+        WalInner::load(wal_manager_dir, shard_id).await
     }
 
     fn generate_new_wal_file_path(&self) -> PathBuf {
@@ -162,7 +163,7 @@ impl Wal {
     }
 }
 
-impl WalTrait for Wal {
+impl WalInner {
     async fn entries(
         &mut self,
         mut lo: u64,
@@ -262,6 +263,7 @@ impl WalTrait for Wal {
     }
 
     async fn append(&mut self, ents: Vec<Entry>, discard: bool) -> Result<u64> {
+        // TODO: use group commit to improve performance
         if discard {
             self.discard(ents.first().unwrap().index).await?;
         }
@@ -354,4 +356,55 @@ async fn remove_files_in_dir<P: AsRef<Path>>(path: P) -> Result<()> {
         }
     }
     Ok(())
+}
+
+pub struct Wal {
+    inner: Arc<tokio::sync::RwLock<WalInner>>,
+}
+
+impl Wal {
+    pub async fn remove_wal(shard_id: u64) -> Result<()> {
+        WalInner::remove_wal(shard_id).await
+    }
+
+    pub async fn load_wal_by_shard_id(shard_id: u64) -> Result<Wal> {
+        let inner = WalInner::load_wal_by_shard_id(shard_id).await?;
+
+        let wal_inner = Arc::new(tokio::sync::RwLock::new(inner));
+
+        Ok(Wal {
+            inner: wal_inner.clone(),
+        })
+    }
+
+    pub async fn create_wal_dir(shard_id: u64) -> Result<()> {
+        WalInner::create_wal_dir(shard_id).await
+    }
+}
+
+impl WalTrait for Wal {
+    async fn entries(
+        &self,
+        lo: u64,
+        hi: u64, /* lo..=hi */
+        max_size: u64,
+    ) -> Result<Vec<Entry>> {
+        self.inner.write().await.entries(lo, hi, max_size).await
+    }
+
+    async fn append(&self, ents: Entry, discard: bool) -> Result<u64 /* last_index */> {
+        self.inner.write().await.append(vec![ents], discard).await
+    }
+
+    async fn compact(&self, compact_index: u64) -> Result<()> {
+        self.inner.write().await.compact(compact_index).await
+    }
+
+    async fn first_index(&self) -> u64 {
+        self.inner.read().await.first_index()
+    }
+
+    async fn next_index(&self) -> u64 {
+        self.inner.read().await.next_index()
+    }
 }

@@ -52,7 +52,7 @@ impl Leader {
 
                         let replicates = shard.replicates();
                         'inner: for addr in replicates.iter() {
-                            match shard.clone().append_log_entry_to(&addr.to_string(), en.entry.clone()).await {
+                            match shard.clone().append_log_entry_to_addr(&addr.to_string(), en.entry.clone()).await {
                                 Err(ShardError::NotLeaderWithTs(last_leader_chagne_ts)) => {
                                     shard.update_membership(false, last_leader_chagne_ts, None); // FIXME: error handling
                                     shard.switch_role_to_follower().await.unwrap();

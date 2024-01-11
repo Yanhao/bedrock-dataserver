@@ -68,7 +68,7 @@ pub struct Shard {
     input: ArcSwapOption<mpsc::Sender<EntryWithNotifierSender>>,
 
     kv_store: Option<SledStore>,
-    replog: Option<RwLock<Wal>>,
+    replog: Option<Wal>,
 
     write_lock: Mutex<()>,
     membership_update_lock: parking_lot::Mutex<()>,
@@ -96,14 +96,14 @@ impl Drop for Shard {
 }
 
 impl Shard {
-    fn new(kv_store: SledStore, meta: ShardMeta, wal: Wal) -> Self {
-        let next_index = wal.next_index();
+    async fn new(kv_store: SledStore, meta: ShardMeta, wal: Wal) -> Self {
+        let next_index = wal.next_index().await;
         info!("shard 0x{:016x}, next_index: {next_index}", meta.shard_id);
 
         Shard {
             shard_meta: Arc::new(parking_lot::RwLock::new(meta)),
             kv_store: Some(kv_store.clone()),
-            replog: Some(RwLock::new(wal)),
+            replog: Some(wal),
             deleting: false.into(),
             installing_snapshot: false.into(),
             input: None.into(),
@@ -193,7 +193,7 @@ impl Shard {
         Wal::create_wal_dir(shard_id).await?;
         let wal = Wal::load_wal_by_shard_id(shard_id).await?;
 
-        Ok(Self::new(sled_db, meta, wal))
+        Ok(Self::new(sled_db, meta, wal).await)
     }
 
     pub async fn load_shard(shard_id: u64) -> Result<Self> {
@@ -206,7 +206,7 @@ impl Shard {
         let wal = Wal::load_wal_by_shard_id(shard_id).await?;
         info!("shard meta: {:?}", meta);
 
-        Ok(Self::new(sled_db, meta, wal))
+        Ok(Self::new(sled_db, meta, wal).await)
     }
 
     async fn remove_shard(shard_id: u64) -> Result<()> {
@@ -300,10 +300,10 @@ impl Shard {
     }
 
     pub async fn next_index(&self) -> u64 {
-        self.replog.r().read().await.next_index()
+        self.replog.r().next_index().await
     }
     pub async fn reset_replog(&self, next_index: u64) -> Result<()> {
-        self.replog.r().write().await.compact(next_index).await
+        self.replog.r().compact(next_index).await
     }
 }
 
@@ -370,28 +370,23 @@ impl Shard {
             ..Default::default()
         };
 
-        let lg = self.write_lock.lock().await;
-        // TODO: use group commit to improve performance
-        let index = self
-            .replog
-            .r()
-            .write()
-            .await
-            .append(vec![entry.clone()], false)
-            .await
-            .unwrap();
-        info!("write at index: {index}");
-        entry.index = index;
+        let rx = {
+            let _lg = self.write_lock.lock().await;
 
-        let (tx, rx) = mpsc::channel(3);
-        if let Some(i) = self.input.load().as_ref() {
-            i.send(EntryWithNotifierSender {
-                entry: entry.clone(),
-                sender: tx,
-            })
-            .await?;
-        }
-        drop(lg);
+            let index = self.do_append_replog(&entry, false).await?;
+            info!("write at index: {index}");
+            entry.index = index;
+
+            let (tx, rx) = mpsc::channel(3);
+            if let Some(i) = self.input.load().as_ref() {
+                i.send(EntryWithNotifierSender {
+                    entry: entry.clone(),
+                    sender: tx,
+                })
+                .await?;
+            }
+            rx
+        };
 
         Ok(EntryWithNotifierReceiver {
             entry,
@@ -400,22 +395,19 @@ impl Shard {
     }
 
     pub async fn append_log_entry(&self, entry: &Entry) -> Result<()> {
-        let next_index = self.replog.r().read().await.next_index();
+        let next_index = self.replog.r().next_index().await;
         info!("last_index: {next_index}, entry index: {}", entry.index);
         if next_index != entry.index {
             bail!(ShardError::LogIndexLag(next_index));
         }
 
-        // TODO: use group commit to improve performance
-        self.replog
-            .r()
-            .write()
-            .await
-            .append(vec![entry.clone()], true)
-            .await
-            .unwrap();
+        let _ = self.do_append_replog(entry, true).await?;
 
         Ok(())
+    }
+
+    async fn do_append_replog(&self, entry: &Entry, discard: bool) -> Result<u64> {
+        self.replog.r().append(entry.clone(), discard).await
     }
 
     pub async fn apply_entry(&self, entry: &Entry) -> Result<Option<Bytes>> {
@@ -451,7 +443,7 @@ impl Shard {
         Ok(None)
     }
 
-    pub async fn append_log_entry_to(
+    pub async fn append_log_entry_to_addr(
         self: Arc<Shard>,
         addr: &str,
         en: Entry,
@@ -494,13 +486,7 @@ impl Shard {
                 return Ok(());
             }
 
-            let entries_res = self
-                .replog
-                .r()
-                .write()
-                .await
-                .entries(next_index, en.index, 1024)
-                .await;
+            let entries_res = self.replog.r().entries(next_index, en.index, 1024).await;
 
             if let Err(e) = entries_res {
                 error!("call replog.entries failed, err: {e}");
@@ -552,8 +538,7 @@ impl Shard {
         addr: &str,
     ) -> Result<u64 /*last_wal_index */> {
         let snap = self.get_kv_store().take_snapshot()?;
-
-        let next_wal_index = self.next_index().await; // FIXME: keep atomic with above
+        let next_wal_index = self.next_index().await; // FIXME: keep atomic with above line
 
         let mut req_stream = vec![];
         for kv in snap.into_iter() {
