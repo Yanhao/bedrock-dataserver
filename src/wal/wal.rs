@@ -9,12 +9,14 @@ use tracing::{debug, error, info};
 
 use idl_gen::replog_pb::Entry;
 
-use super::{wal_file, WalTrait};
+use super::group_commiter::GroupCommitter;
+use super::wal_file;
 use crate::config::CONFIG;
+use crate::shard::ShardError;
 
 const MAX_ENTRY_COUNT: u64 = 10;
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone)]
 pub enum WalError {
     #[error("file already exists")]
     FileExists,
@@ -360,6 +362,11 @@ async fn remove_files_in_dir<P: AsRef<Path>>(path: P) -> Result<()> {
 
 pub struct Wal {
     inner: Arc<tokio::sync::RwLock<WalInner>>,
+    merger: GroupCommitter<
+        Entry,
+        std::result::Result<MergerAppendRet, WalError>,
+        Arc<tokio::sync::RwLock<WalInner>>,
+    >,
 }
 
 impl Wal {
@@ -371,10 +378,42 @@ impl Wal {
         let inner = WalInner::load_wal_by_shard_id(shard_id).await?;
 
         let wal_inner = Arc::new(tokio::sync::RwLock::new(inner));
-
-        Ok(Wal {
+        let mut wal = Wal {
             inner: wal_inner.clone(),
-        })
+            merger: GroupCommitter::builder()
+                .extra(Some(wal_inner.clone()))
+                .build(),
+        };
+
+        wal.merger.start(
+            async move |wal_inner: Option<Arc<tokio::sync::RwLock<WalInner>>>,
+                        ents: Vec<Entry>|
+                        -> std::result::Result<MergerAppendRet, WalError> {
+                let index = wal_inner
+                    .unwrap()
+                    .write()
+                    .await
+                    .append(ents.clone(), false)
+                    .await
+                    .map_err(|_e| WalError::FailedToWrite)?;
+
+                let (tx, _) = tokio::sync::broadcast::channel(1);
+
+                Ok(MergerAppendRet {
+                    entry: Entry {
+                        index,
+                        items: ents
+                            .into_iter()
+                            .map(|ent| ent.items)
+                            .collect::<Vec<_>>()
+                            .concat(),
+                    }, // FIXME: remove duplicates
+                    broadcaster: tx,
+                })
+            },
+        );
+
+        Ok(wal)
     }
 
     pub async fn create_wal_dir(shard_id: u64) -> Result<()> {
@@ -382,8 +421,8 @@ impl Wal {
     }
 }
 
-impl WalTrait for Wal {
-    async fn entries(
+impl Wal {
+    pub async fn entries(
         &self,
         lo: u64,
         hi: u64, /* lo..=hi */
@@ -392,19 +431,32 @@ impl WalTrait for Wal {
         self.inner.write().await.entries(lo, hi, max_size).await
     }
 
-    async fn append(&self, ents: Entry, discard: bool) -> Result<u64 /* last_index */> {
-        self.inner.write().await.append(vec![ents], discard).await
+    pub async fn append_by_follower(&self, ent: Entry) -> Result<()> {
+        self.inner.write().await.append(vec![ent], true).await?;
+        Ok(())
     }
 
-    async fn compact(&self, compact_index: u64) -> Result<()> {
+    pub async fn append_by_leader(&self, ent: Entry) -> Result<(bool, MergerAppendRet)> {
+        let (is_group_leader, merger_append_ret) = self.merger.r#do(ent).await?;
+
+        Ok((is_group_leader, merger_append_ret?))
+    }
+
+    pub async fn compact(&self, compact_index: u64) -> Result<()> {
         self.inner.write().await.compact(compact_index).await
     }
 
-    async fn first_index(&self) -> u64 {
+    pub async fn first_index(&self) -> u64 {
         self.inner.read().await.first_index()
     }
 
-    async fn next_index(&self) -> u64 {
+    pub async fn next_index(&self) -> u64 {
         self.inner.read().await.next_index()
     }
+}
+
+#[derive(Clone)]
+pub struct MergerAppendRet {
+    pub entry: Entry,
+    pub broadcaster: tokio::sync::broadcast::Sender<std::result::Result<(), ShardError>>,
 }

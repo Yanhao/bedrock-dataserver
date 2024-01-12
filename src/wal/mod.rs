@@ -3,6 +3,7 @@ use anyhow::Result;
 use idl_gen::replog_pb::Entry;
 
 // mod mem_log;
+mod group_commiter;
 #[allow(clippy::module_inception)]
 mod wal;
 mod wal_file;

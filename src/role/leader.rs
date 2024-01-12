@@ -56,7 +56,7 @@ impl Leader {
                                 Err(ShardError::NotLeaderWithTs(last_leader_chagne_ts)) => {
                                     shard.update_membership(false, last_leader_chagne_ts, None); // FIXME: error handling
                                     shard.switch_role_to_follower().await.unwrap();
-                                    en.sender.send(Err(ShardError::NotLeader)).await.unwrap();
+                                    en.sender.send(Err(ShardError::NotLeader)).unwrap();
                                     continue 'outer;
                                 },
                                 Err(ShardError::FailedToAppendLog) => {
@@ -74,11 +74,11 @@ impl Leader {
 
                         info!("success_replicate_count: {}", success_replicate_count);
                         if success_replicate_count >= 0 {
-                            if let Err(e) = en.sender.send(Ok(())).await {
+                            if let Err(e) = en.sender.send(Ok(())) {
                                 error!("failed: {}", e);
                             }
                         } else {
-                            en.sender.send(Err(ShardError::FailedToAppendLog)).await.unwrap();
+                            en.sender.send(Err(ShardError::FailedToAppendLog)).unwrap();
                         }
                     }
                 }

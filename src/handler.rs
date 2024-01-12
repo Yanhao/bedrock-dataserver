@@ -135,10 +135,16 @@ impl DataService for RealDataServer {
 
         for e in req.get_ref().entries.iter() {
             let e = replog_pb::Entry {
-                op: e.op.clone(),
                 index: e.index,
-                key: e.key.clone(),
-                value: e.value.clone(),
+                items: e
+                    .items
+                    .iter()
+                    .map(|i| replog_pb::EntryItem {
+                        op: i.op.clone(),
+                        key: i.key.clone(),
+                        value: i.value.clone(),
+                    })
+                    .collect(),
             };
             if let Err(e) = shard.append_log_entry(&e).await {
                 if let Some(ShardError::LogIndexLag(next_index)) = e.downcast_ref() {

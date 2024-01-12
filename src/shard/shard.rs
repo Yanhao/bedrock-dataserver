@@ -13,9 +13,9 @@ use num_bigint::{BigUint, ToBigUint};
 use prost::Message;
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tonic::Request;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
-use idl_gen::replog_pb::Entry;
+use idl_gen::replog_pb::{Entry, EntryItem};
 use idl_gen::service_pb::{
     data_service_client, shard_append_log_request, shard_install_snapshot_request,
     CreateShardRequest, ShardAppendLogRequest, ShardInstallSnapshotRequest, ShardMeta,
@@ -28,7 +28,7 @@ use crate::metadata::{Meta, METADATA};
 use crate::role::{Follower, Leader, Role};
 use crate::shard::ShardError;
 use crate::utils::R;
-use crate::wal::{Wal, WalTrait};
+use crate::wal::Wal;
 
 use super::Operation;
 
@@ -40,26 +40,7 @@ const SHARD_DATA_KEY_PREFIX: &str = "/data/";
 #[derive(Debug)]
 pub struct EntryWithNotifierSender {
     pub entry: Entry,
-    pub sender: mpsc::Sender<Result<(), ShardError>>,
-}
-
-pub struct EntryWithNotifierReceiver {
-    pub entry: Entry,
-    receiver: mpsc::Receiver<Result<(), ShardError>>,
-}
-
-impl EntryWithNotifierReceiver {
-    pub async fn wait_result(&mut self) -> Result<()> {
-        let res = self
-            .receiver
-            .recv()
-            .await
-            .ok_or(anyhow!("wait result failed"))?;
-
-        res?;
-
-        Ok(())
-    }
+    pub sender: tokio::sync::broadcast::Sender<Result<(), ShardError>>,
 }
 
 pub struct Shard {
@@ -362,36 +343,52 @@ impl Shard {
         op: Operation,
         key: &[u8],
         value: &[u8],
-    ) -> Result<EntryWithNotifierReceiver> {
-        let mut entry = Entry {
-            op: op.to_string(),
-            key: key.to_owned(),
-            value: value.to_owned(),
-            ..Default::default()
+    ) -> Result<Option<Bytes>> {
+        let entry = Entry {
+            index: 0,
+            items: vec![EntryItem {
+                op: op.to_string(),
+                key: key.to_owned(),
+                value: value.to_owned(),
+            }],
         };
 
-        let rx = {
-            let _lg = self.write_lock.lock().await;
+        let _lg = self.write_lock.lock().await;
 
-            let index = self.do_append_replog(&entry, false).await?;
-            info!("write at index: {index}");
-            entry.index = index;
+        let (is_group_leader, merger_append_ret) =
+            self.replog.r().append_by_leader(entry.clone()).await?;
+        // info!("write at index: {index}");
+        // entry.index = index;
 
-            let (tx, rx) = mpsc::channel(3);
+        let tx = merger_append_ret.broadcaster;
+        let mut rx = tx.subscribe();
+
+        if is_group_leader {
             if let Some(i) = self.input.load().as_ref() {
                 i.send(EntryWithNotifierSender {
-                    entry: entry.clone(),
+                    entry: merger_append_ret.entry.clone(),
                     sender: tx,
                 })
                 .await?;
             }
-            rx
-        };
+        }
 
-        Ok(EntryWithNotifierReceiver {
-            entry,
-            receiver: rx,
-        })
+        debug!("start wait result");
+        rx.recv().await?.inspect_err(|e| {
+            error!(
+                msg = "write wait result failed.",
+                err = ?e,
+                op = "kv_set",
+                key = unsafe { String::from_utf8_unchecked(key.to_vec()) },
+            )
+        })?;
+        debug!(" wait result successed");
+
+        if is_group_leader {
+            return self.apply_entry(&merger_append_ret.entry).await;
+        }
+
+        Ok(None)
     }
 
     pub async fn append_log_entry(&self, entry: &Entry) -> Result<()> {
@@ -401,42 +398,36 @@ impl Shard {
             bail!(ShardError::LogIndexLag(next_index));
         }
 
-        let _ = self.do_append_replog(entry, true).await?;
+        self.replog.r().append_by_follower(entry.clone()).await?;
 
         Ok(())
     }
 
-    async fn do_append_replog(&self, entry: &Entry, discard: bool) -> Result<u64> {
-        self.replog.r().append(entry.clone(), discard).await
-    }
-
     pub async fn apply_entry(&self, entry: &Entry) -> Result<Option<Bytes>> {
-        let op: Operation = entry.op.clone().into();
+        for ei in entry.items.iter() {
+            let op: Operation = ei.clone().op.into();
 
-        match op {
-            Operation::Noop => unreachable!(),
-            Operation::Set => {
-                self.get_kv_store().kv_set(
-                    Shard::data_key(&entry.key).into(),
-                    entry.value.clone().into(),
-                )?;
-            }
-            Operation::SetNs => {
-                if self
-                    .get_kv_store()
-                    .kv_get(Shard::data_key(&entry.key).into())?
-                    .is_none()
-                {
-                    self.get_kv_store().kv_set(
-                        Shard::data_key(&entry.key).into(),
-                        entry.value.clone().into(),
-                    )?;
+            match op {
+                Operation::Noop => unreachable!(),
+                Operation::Set => {
+                    self.get_kv_store()
+                        .kv_set(Shard::data_key(&ei.key).into(), ei.value.clone().into())?;
                 }
-            }
-            Operation::Del => {
-                return self
-                    .get_kv_store()
-                    .kv_delete(Shard::data_key(&entry.key).into());
+                Operation::SetNs => {
+                    if self
+                        .get_kv_store()
+                        .kv_get(Shard::data_key(&ei.key).into())?
+                        .is_none()
+                    {
+                        self.get_kv_store()
+                            .kv_set(Shard::data_key(&ei.key).into(), ei.value.clone().into())?;
+                    }
+                }
+                Operation::Del => {
+                    return self
+                        .get_kv_store()
+                        .kv_delete(Shard::data_key(&ei.key).into());
+                }
             }
         }
 
@@ -458,10 +449,16 @@ impl Shard {
             shard_id,
             leader_change_ts: Some(self.leader_change_ts().into()),
             entries: vec![shard_append_log_request::Entry {
-                op: en.op.clone(),
                 index: en.index,
-                key: en.key.clone(),
-                value: en.value.clone(),
+                items: en
+                    .items
+                    .into_iter()
+                    .map(|ei| shard_append_log_request::EntryItem {
+                        op: ei.op.clone(),
+                        key: ei.key.clone(),
+                        value: ei.value.clone(),
+                    })
+                    .collect(),
             }],
         });
 
@@ -509,10 +506,16 @@ impl Shard {
                         info!("append_log_to ent index: {}", ent.index);
 
                         shard_append_log_request::Entry {
-                            op: ent.op.clone(),
                             index: ent.index,
-                            key: ent.key.clone(),
-                            value: ent.value.clone(),
+                            items: ent
+                                .items
+                                .iter()
+                                .map(|ei| shard_append_log_request::EntryItem {
+                                    op: ei.op.clone(),
+                                    key: ei.key.clone(),
+                                    value: ei.value.clone(),
+                                })
+                                .collect(),
                         }
                     })
                     .collect(),

@@ -1,6 +1,6 @@
 use anyhow::Result;
 use bytes::Bytes;
-use tracing::{debug, error};
+use tracing::error;
 
 use crate::kv_store::KvStore;
 use crate::shard::{self, Shard};
@@ -73,8 +73,7 @@ impl<'a> Dstore<'a> {
     }
 
     pub async fn kv_set(&self, key: Bytes, value: Bytes) -> Result<()> {
-        let mut entry_with_notifier = self
-            .shard
+        self.shard
             .process_write(shard::Operation::Set, &key, &value.to_vec())
             .await
             .inspect_err(|e| {
@@ -86,36 +85,11 @@ impl<'a> Dstore<'a> {
                 )
             })?;
 
-        debug!("start wait result");
-        entry_with_notifier.wait_result().await.inspect_err(|e| {
-            error!(
-                msg = "write wait result failed.",
-                err = ?e,
-                op = "kv_set",
-                key = unsafe { String::from_utf8_unchecked(key.to_vec()) },
-            )
-        })?;
-        let _ = self
-            .shard
-            .apply_entry(&entry_with_notifier.entry)
-            .await
-            .inspect_err(|e| {
-                error!(
-                    msg = "apply entry failed.",
-                    err = ?e,
-                    op = "kv_set",
-                    key = unsafe { String::from_utf8_unchecked(key.to_vec()) },
-                )
-            })?;
-
-        debug!(" wait result successed");
-
         Ok(())
     }
 
     pub async fn kv_set_ns(&self, key: Bytes, value: Bytes) -> Result<()> {
-        let mut entry_with_notifier = self
-            .shard
+        self.shard
             .process_write(shard::Operation::Set, &key, &value.to_vec())
             .await
             .inspect_err(|e| {
@@ -127,64 +101,16 @@ impl<'a> Dstore<'a> {
                 )
             })?;
 
-        debug!("start wait result");
-        entry_with_notifier.wait_result().await.inspect_err(|e| {
-            error!(
-                msg = "write wait result failed.",
-                err = ?e,
-                op = "kv_set",
-                key = unsafe { String::from_utf8_unchecked(key.to_vec()) },
-            )
-        })?;
-        let _ = self
-            .shard
-            .apply_entry(&entry_with_notifier.entry)
-            .await
-            .inspect_err(|e| {
-                error!(
-                    msg = "apply entry failed.",
-                    err = ?e,
-                    op = "kv_set",
-                    key = unsafe { String::from_utf8_unchecked(key.to_vec()) },
-                )
-            })?;
-
-        debug!(" wait result successed");
-
         Ok(())
     }
 
     pub async fn kv_delete(&self, key: Bytes) -> Result<Option<Bytes>> {
-        let mut entry_with_notifier = self
-            .shard
+        self.shard
             .process_write(shard::Operation::Del, &key, &vec![])
             .await
             .inspect_err(|e| {
                 error!(
                     msg = "process wirte failed.",
-                    err = ?e,
-                    op = "kv_delete",
-                    key = unsafe { String::from_utf8_unchecked(key.to_vec()) },
-                )
-            })?;
-
-        debug!("start wait result");
-        entry_with_notifier.wait_result().await.inspect_err(|e| {
-            error!(
-                msg = "write wait result failed.",
-                err = ?e,
-                op = "kv_delete",
-                key = unsafe { String::from_utf8_unchecked(key.to_vec()) },
-            )
-        })?;
-
-        self.shard
-            .apply_entry(&entry_with_notifier.entry)
-            .await
-            .inspect(|_| debug!(" wait result successed"))
-            .inspect_err(|e| {
-                error!(
-                    msg = "apply entry failed.",
                     err = ?e,
                     op = "kv_delete",
                     key = unsafe { String::from_utf8_unchecked(key.to_vec()) },
