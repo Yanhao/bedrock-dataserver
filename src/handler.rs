@@ -41,9 +41,17 @@ impl DataService for RealDataServer {
 
         let shard_id = req.get_ref().shard_id;
 
-        Shard::create_shard(&req)
-            .await
-            .map_err(|e| Status::invalid_argument(format!("failed to create shard, {:?}", e)))?;
+        Shard::create(
+            shard_id,
+            req.get_ref().leader.parse().unwrap(),
+            req.get_ref().leader_change_ts.clone(),
+            req.get_ref().replicates.clone(),
+            req.get_ref().replica_update_ts.clone(),
+            req.get_ref().min_key.clone(),
+            req.get_ref().max_key.clone(),
+        )
+        .await
+        .map_err(|e| Status::invalid_argument(format!("failed to create shard, {:?}", e)))?;
 
         let _shard = self.get_shard(shard_id).await?;
 

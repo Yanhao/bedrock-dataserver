@@ -54,7 +54,7 @@ impl ShardManager {
         let (start_key, end_key) = (shard.middle_key(), shard.max_key());
 
         let new_shard = Arc::new(
-            Shard::create_shard_for_split(
+            Shard::create_for_split(
                 new_shard_id,
                 shard.leader(),
                 shard.replicates(),

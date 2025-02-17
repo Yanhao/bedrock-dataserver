@@ -4,13 +4,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::vec::Vec;
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{bail, Result};
 use arc_swap::ArcSwapOption;
 use bytes::{Bytes, BytesMut};
 use futures::executor::block_on;
 use futures_util::stream;
 use num_bigint::{BigUint, ToBigUint};
-use prost::Message;
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tonic::Request;
 use tracing::{debug, error, info, warn};
@@ -18,7 +17,7 @@ use tracing::{debug, error, info, warn};
 use idl_gen::replog_pb::{Entry, EntryItem};
 use idl_gen::service_pb::{
     data_service_client, shard_append_log_request, shard_install_snapshot_request,
-    CreateShardRequest, ShardAppendLogRequest, ShardInstallSnapshotRequest, ShardMeta,
+    ShardAppendLogRequest, ShardInstallSnapshotRequest, ShardMeta,
 };
 
 use crate::config::CONFIG;
@@ -33,8 +32,6 @@ use crate::wal::Wal;
 use super::Operation;
 
 const INPUT_CHANNEL_LEN: usize = 10240;
-const SHARD_META_KEY: &str = "shard_meta";
-const SHARD_META_KEY_PREFIX: &str = "/meta/";
 const SHARD_DATA_KEY_PREFIX: &str = "/data/";
 
 #[derive(Debug)]
@@ -95,45 +92,40 @@ impl Shard {
         }
     }
 
-    pub async fn create_shard(req: &Request<CreateShardRequest>) -> Result<()> {
-        let shard_id = req.get_ref().shard_id;
-
+    pub async fn create(
+        shard_id: u64,
+        leader: SocketAddr,
+        leader_change_ts: Option<prost_types::Timestamp>,
+        replicates: Vec<String>,
+        replicates_update_ts: Option<prost_types::Timestamp>,
+        min_key: Vec<u8>,
+        max_key: Vec<u8>,
+    ) -> Result<()> {
         SledStore::create(shard_id).await?;
-        let sled_db = SledStore::load(shard_id).await?;
+        Wal::create(shard_id).await?;
 
-        let meta = ShardMeta {
+        METADATA.write().put_shard(
             shard_id,
-            is_leader: CONFIG.read().get_self_socket_addr().to_string() == req.get_ref().leader,
-            create_ts: req.get_ref().create_ts.to_owned().unwrap().into(),
-            leader: req.get_ref().leader.clone(),
-            leader_change_ts: req.get_ref().leader_change_ts.to_owned().unwrap().into(),
-            replicates_update_ts: req.get_ref().replica_update_ts.to_owned().unwrap().into(),
+            ShardMeta {
+                shard_id,
+                create_ts: Some(std::time::SystemTime::now().into()),
+                leader: leader.to_string(),
+                is_leader: CONFIG.read().get_self_socket_addr() == leader,
+                leader_change_ts,
 
-            replicates: req.get_ref().replicates.clone(),
-            next_index: 0,
+                replicates,
+                replicates_update_ts,
+                next_index: 0,
 
-            min_key: req.get_ref().min_key.clone(),
-            max_key: req.get_ref().max_key.clone(),
-        };
-
-        let meta_buf = {
-            let mut buf = Vec::new();
-            meta.encode(&mut buf).unwrap();
-            buf
-        };
-        sled_db.kv_set(
-            Self::meta_key(SHARD_META_KEY.as_bytes()).into(),
-            meta_buf.into(),
+                min_key,
+                max_key,
+            },
         )?;
-
-        Wal::create_wal_dir(shard_id).await?;
-
-        METADATA.write().put_shard(shard_id, meta)?;
 
         Ok(())
     }
 
-    pub async fn create_shard_for_split(
+    pub async fn create_for_split(
         shard_id: u64,
         leader: String,
         replicates: Vec<SocketAddr>,
@@ -141,7 +133,7 @@ impl Shard {
         key_range: Range<Vec<u8>>,
     ) -> Result<Self> {
         SledStore::create(shard_id).await?;
-        let sled_db = SledStore::load(shard_id).await?;
+        Wal::create(shard_id).await?;
 
         let meta = ShardMeta {
             shard_id,
@@ -159,32 +151,21 @@ impl Shard {
             max_key: key_range.end,
         };
 
-        let meta_buf = {
-            let mut buf = Vec::new();
-            meta.encode(&mut buf).unwrap();
-            buf
-        };
-        sled_db.kv_set(
-            Self::meta_key(SHARD_META_KEY.as_bytes()).into(),
-            meta_buf.into(),
-        )?;
-
         METADATA.write().put_shard(shard_id, meta.clone())?;
 
-        Wal::create_wal_dir(shard_id).await?;
-        let wal = Wal::load_wal_by_shard_id(shard_id).await?;
-
-        Ok(Self::new(sled_db, meta, wal).await)
+        Ok(Self::new(
+            SledStore::load(shard_id).await?,
+            meta,
+            Wal::load_wal_by_shard_id(shard_id).await?,
+        )
+        .await)
     }
 
     pub async fn load_shard(shard_id: u64) -> Result<Self> {
         let sled_db = SledStore::load(shard_id).await.unwrap();
-
-        let meta_buf = sled_db
-            .kv_get(Self::meta_key(SHARD_META_KEY.as_bytes()).into())?
-            .unwrap();
-        let meta = ShardMeta::decode(meta_buf).unwrap();
         let wal = Wal::load_wal_by_shard_id(shard_id).await?;
+
+        let meta = METADATA.read().get_shard(shard_id)?;
         info!("shard meta: {:?}", meta);
 
         Ok(Self::new(sled_db, meta, wal).await)
@@ -262,16 +243,7 @@ impl Shard {
     }
 
     fn save_meta(&self, meta: &ShardMeta) -> Result<()> {
-        let mut meta_buf = Vec::new();
-        meta.encode(&mut meta_buf).unwrap();
-        self.get_kv_store().kv_set(
-            Self::meta_key(SHARD_META_KEY.as_bytes()).into(),
-            meta_buf.to_vec().into(),
-        )?;
-
-        METADATA
-            .write()
-            .put_shard(self.shard_id(), self.shard_meta.read().clone())?;
+        METADATA.write().put_shard(self.shard_id(), meta.clone())?;
 
         Ok(())
     }
@@ -300,13 +272,6 @@ impl Shard {
 
     pub fn max_key(&self) -> Vec<u8> {
         self.shard_meta.read().max_key.clone()
-    }
-
-    pub fn meta_key(key: &[u8]) -> Vec<u8> {
-        let mut b = BytesMut::new();
-        b.extend_from_slice(SHARD_META_KEY_PREFIX.as_bytes());
-        b.extend_from_slice(&key);
-        b.freeze().into()
     }
 
     pub fn data_key(key: &[u8]) -> Vec<u8> {

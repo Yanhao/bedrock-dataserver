@@ -29,6 +29,7 @@ where
 {
     fn is_shard_exists(&self, shard_id: u64) -> Result<bool>;
     fn put_shard(&self, shard_id: u64, meta: ShardMeta) -> Result<()>;
+    fn get_shard(&self, shard_id: u64) -> Result<ShardMeta>;
     fn remove_shard(&self, shard_id: u64) -> Result<()>;
     fn shard_iter(&self) -> T;
 }
@@ -96,6 +97,14 @@ impl Meta<ShardMetaIter> for MetaData {
 
         self.meta_db.insert(key, buf).map_err(|_| anyhow!(""))?;
         Ok(())
+    }
+
+    fn get_shard(&self, shard_id: u64) -> Result<ShardMeta> {
+        let key = Self::shard_key(shard_id);
+        match self.meta_db.get(key)? {
+            Some(value) => Ok(ShardMeta::decode(value.as_ref()).unwrap()),
+            None => Err(anyhow!("no such shard")),
+        }
     }
 
     fn remove_shard(&self, shard_id: u64) -> Result<()> {

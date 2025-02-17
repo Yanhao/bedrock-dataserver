@@ -112,7 +112,7 @@ impl WalInner {
         })
     }
 
-    pub async fn create_wal_dir(shard_id: u64) -> Result<()> {
+    pub async fn create(shard_id: u64) -> Result<()> {
         info!("create wal directory for 0x{:016x}", shard_id);
         let wal_manager_dir = Self::wal_dir_path(shard_id);
         create_dir_all(wal_manager_dir).await.unwrap();
@@ -416,8 +416,8 @@ impl Wal {
         Ok(wal)
     }
 
-    pub async fn create_wal_dir(shard_id: u64) -> Result<()> {
-        WalInner::create_wal_dir(shard_id).await
+    pub async fn create(shard_id: u64) -> Result<()> {
+        WalInner::create(shard_id).await
     }
 }
 
