@@ -1,3 +1,7 @@
+//! WAL (Write-Ahead Logging) main module
+//! Responsible for core logic such as log append, recovery, compaction, and group commit.
+//! Supports sharding, file segmentation, group commit, etc., ensuring high performance and data consistency.
+
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
@@ -44,6 +48,7 @@ pub enum WalError {
     TooManyEntries,
 }
 
+/// Internal WAL structure, manages all WAL files and directory for a shard
 struct WalInner {
     shard_id: u64,
     wal_files: Vec<wal_file::WalFile>,
@@ -51,13 +56,14 @@ struct WalInner {
 }
 
 impl WalInner {
+    /// Get WAL file name suffix (sequence number)
     fn wal_file_suffix(path: impl AsRef<Path>) -> u64 {
-        let path = path.as_ref().as_os_str().to_str().unwrap();
-        let suffix_str = path.split('.').last().unwrap();
-
-        suffix_str.parse().unwrap()
+        let path = path.as_ref().as_os_str().to_str().expect("Invalid path string");
+        let suffix_str = path.split('.').last().expect("No suffix found in WAL file name");
+        suffix_str.parse().expect("Failed to parse WAL file suffix as u64")
     }
 
+    /// Generate WAL directory path for a shard
     fn wal_dir_path(shard_id: u64) -> PathBuf {
         let wal_dir: PathBuf = CONFIG.read().wal_dir.as_ref().unwrap().into();
 
@@ -69,6 +75,7 @@ impl WalInner {
             .join::<String>(format!("{:08x}", (shard_id & 0x00000000_FFFFFFFF) as u32))
     }
 
+    /// Load all WAL files in the specified directory
     async fn load(dir: impl AsRef<Path>, shard_id: u64) -> Result<WalInner> {
         ensure!(dir.as_ref().exists(), "path not exists");
         ensure!(dir.as_ref().is_dir(), "path is not directory");
@@ -112,53 +119,57 @@ impl WalInner {
         })
     }
 
+    /// Create WAL directory for a shard
     pub async fn create(shard_id: u64) -> Result<()> {
         info!("create wal directory for 0x{:016x}", shard_id);
         let wal_manager_dir = Self::wal_dir_path(shard_id);
-        create_dir_all(wal_manager_dir).await.unwrap();
+        create_dir_all(wal_manager_dir).await?;
 
         Ok(())
     }
 
+    /// Load WAL by shard id
     pub async fn load_wal_by_shard_id(shard_id: u64) -> Result<WalInner> {
         let wal_manager_dir = Self::wal_dir_path(shard_id);
         WalInner::load(wal_manager_dir, shard_id).await
     }
 
+    /// Generate new WAL file path
     fn generate_new_wal_file_path(&self) -> PathBuf {
         if self.wal_files.is_empty() {
-            return self.dir.clone().join(String::from_str("wal.0").unwrap());
+            return self.dir.clone().join(String::from_str("wal.0").expect("Failed to create wal.0"));
         }
 
-        let suffix = self.wal_files.last().unwrap().suffix();
+        let suffix = self.wal_files.last().map(|f| f.suffix()).unwrap_or(0);
         self.dir.clone().join(format!("wal.{}", suffix + 1))
     }
 
+    /// Remove WAL directory for a shard
     pub async fn remove_wal(shard_id: u64) -> Result<()> {
-        remove_dir_all(Self::wal_dir_path(shard_id)).await.unwrap();
+        remove_dir_all(Self::wal_dir_path(shard_id)).await?;
         Ok(())
     }
 
+    /// Discard WAL after next_index
     async fn discard(&mut self, next_index: u64) -> Result<()> {
         if self.wal_files.is_empty() {
             return Ok(());
         }
 
-        while self.wal_files.last().unwrap().next_version() > next_index {
-            if self.wal_files.last().unwrap().first_version() > next_index {
-                let wal_file = self.wal_files.pop().unwrap();
-
-                std::fs::remove_file(&wal_file.path).unwrap();
-
+        while self.wal_files.last().map(|f| f.next_version()).unwrap_or(0) > next_index {
+            if self.wal_files.last().map(|f| f.first_version()).unwrap_or(0) > next_index {
+                if let Some(wal_file) = self.wal_files.pop() {
+                    if let Err(e) = std::fs::remove_file(&wal_file.path) {
+                        error!("remove wal file failed: {:?}", e);
+                    }
+                }
                 continue;
             }
-
-            self.wal_files
-                .last_mut()
-                .unwrap()
-                .discard(next_index)
-                .await
-                .unwrap();
+            if let Some(last) = self.wal_files.last_mut() {
+                if let Err(e) = last.discard(next_index).await {
+                    error!("discard wal file failed: {:?}", e);
+                }
+            }
         }
 
         Ok(())
@@ -166,6 +177,7 @@ impl WalInner {
 }
 
 impl WalInner {
+    /// Get log entries in range [lo, hi]
     async fn entries(
         &mut self,
         mut lo: u64,
@@ -185,7 +197,7 @@ impl WalInner {
             bail!(WalError::EmptyWalFiles);
         }
 
-        if self.wal_files.len() == 1 && self.wal_files.first().unwrap().entry_len() <= 1 {
+        if self.wal_files.len() == 1 && self.wal_files.first().map(|f| f.entry_len()).unwrap_or(0) <= 1 {
             bail!(WalError::InvalidParameter);
         }
 
@@ -236,7 +248,7 @@ impl WalInner {
                     },
                 )
                 .await?;
-            ret.append(&mut ents);
+            ret.extend(ents);
 
             lo = if hi < file.next_version() {
                 hi + 1
@@ -248,6 +260,7 @@ impl WalInner {
         Ok(ret)
     }
 
+    /// Get the index of the first log entry
     fn first_index(&self) -> u64 {
         if self.wal_files.is_empty() {
             return 0;
@@ -256,6 +269,7 @@ impl WalInner {
         self.wal_files.first().unwrap().first_version()
     }
 
+    /// Get the index of the next available log entry
     fn next_index(&self) -> u64 {
         if self.wal_files.is_empty() {
             return 0;
@@ -264,38 +278,38 @@ impl WalInner {
         self.wal_files.last().unwrap().next_version()
     }
 
+    /// Append log entries, supports discard
     async fn append(&mut self, ents: Vec<Entry>, discard: bool) -> Result<u64> {
         // TODO: use group commit to improve performance
         if discard {
-            self.discard(ents.first().unwrap().index).await?;
+            if let Some(first) = ents.first() {
+                self.discard(first.index).await?;
+            } else {
+                bail!(WalError::InvalidParameter);
+            }
         }
 
         let mut iter = ents.into_iter().peekable();
         loop {
-            let Some(ent) = iter.peek() else {
-                break;
+            let ent = match iter.peek() {
+                Some(e) => e,
+                None => break,
             };
 
-            if self.wal_files.is_empty() || self.wal_files.last().unwrap().is_sealed() {
+            let need_new_file = self.wal_files.is_empty() || self.wal_files.last().map(|f| f.is_sealed()).unwrap_or(true);
+            if need_new_file {
                 let path = self.generate_new_wal_file_path();
                 let new_wal_file = wal_file::WalFile::create_new_wal_file(path, self.next_index())
-                    .await
-                    .unwrap();
-
+                    .await?;
                 self.wal_files.push(new_wal_file);
             }
 
             debug!("append wal entry, index: {}", ent.index);
 
-            if let Err(e) = self
-                .wal_files
-                .last_mut()
-                .unwrap()
-                .append_entry(ent.clone())
-                .await
-            {
+            let last_mut = self.wal_files.last_mut().expect("WAL files should not be empty after creation");
+            if let Err(e) = last_mut.append_entry(ent.clone()).await {
                 if let Some(WalError::WalFileFull) = e.downcast_ref() {
-                    self.wal_files.last_mut().unwrap().seal().await.unwrap();
+                    self.wal_files.last_mut().expect("WAL files should not be empty").seal().await.expect("Seal should not fail");
                     continue;
                 }
                 return Err(e);
@@ -307,6 +321,7 @@ impl WalInner {
         Ok(self.next_index() - 1)
     }
 
+    /// Log compaction, clears all logs before compact_index
     async fn compact(&mut self, compact_index: u64) -> Result<()> {
         let next_index = self.next_index();
         info!("compact log to {compact_index}, next_index: {next_index}");
@@ -338,7 +353,9 @@ impl WalInner {
                     let path = self.wal_files.first().unwrap().path.clone();
                     self.wal_files.remove(0);
 
-                    tokio::fs::remove_file(&path).await.unwrap();
+                    if let Err(e) = tokio::fs::remove_file(&path).await {
+                        error!("remove wal file failed: {:?}", e);
+                    }
                     info!("remove wal file {:?}", &path);
                 }
             }
@@ -350,6 +367,7 @@ impl WalInner {
     }
 }
 
+/// Remove all files in a directory
 async fn remove_files_in_dir<P: AsRef<Path>>(path: P) -> Result<()> {
     let mut dir = fs::read_dir(path).await?;
     while let Some(entry) = dir.next_entry().await? {
@@ -360,6 +378,7 @@ async fn remove_files_in_dir<P: AsRef<Path>>(path: P) -> Result<()> {
     Ok(())
 }
 
+/// Main WAL struct, thread-safe, supports group commit
 pub struct Wal {
     inner: Arc<tokio::sync::RwLock<WalInner>>,
     merger: GroupCommitter<
@@ -370,10 +389,12 @@ pub struct Wal {
 }
 
 impl Wal {
+    /// Remove WAL for a shard
     pub async fn remove_wal(shard_id: u64) -> Result<()> {
         WalInner::remove_wal(shard_id).await
     }
 
+    /// Load WAL for a shard
     pub async fn load_wal_by_shard_id(shard_id: u64) -> Result<Wal> {
         let inner = WalInner::load_wal_by_shard_id(shard_id).await?;
 
@@ -416,12 +437,14 @@ impl Wal {
         Ok(wal)
     }
 
+    /// Create WAL for a shard
     pub async fn create(shard_id: u64) -> Result<()> {
         WalInner::create(shard_id).await
     }
 }
 
 impl Wal {
+    /// Get log entries in range [lo, hi]
     pub async fn entries(
         &self,
         lo: u64,
@@ -431,30 +454,36 @@ impl Wal {
         self.inner.write().await.entries(lo, hi, max_size).await
     }
 
+    /// Append log as follower
     pub async fn append_by_follower(&self, ent: Entry) -> Result<()> {
         self.inner.write().await.append(vec![ent], true).await?;
         Ok(())
     }
 
+    /// Append log as leader, supports group commit
     pub async fn append_by_leader(&self, ent: Entry) -> Result<(bool, MergerAppendRet)> {
         let (is_group_leader, merger_append_ret) = self.merger.r#do(ent).await?;
 
         Ok((is_group_leader, merger_append_ret?))
     }
 
+    /// Log compaction
     pub async fn compact(&self, compact_index: u64) -> Result<()> {
         self.inner.write().await.compact(compact_index).await
     }
 
+    /// Get the index of the first log entry
     pub async fn first_index(&self) -> u64 {
         self.inner.read().await.first_index()
     }
 
+    /// Get the index of the next available log entry
     pub async fn next_index(&self) -> u64 {
         self.inner.read().await.next_index()
     }
 }
 
+/// Group commit return struct
 #[derive(Clone)]
 pub struct MergerAppendRet {
     pub entry: Entry,

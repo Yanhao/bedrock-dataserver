@@ -1,3 +1,7 @@
+//! wal_file.rs
+//! WAL file low-level implementation, responsible for log entry serialization, persistence, file segmentation, metadata management, etc.
+//! Supports file header/footer, batch index, checksum, etc., ensuring data integrity and efficient read/write.
+
 use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
 use std::slice;
@@ -66,6 +70,7 @@ pub struct WalFooter {
     pub padding_: [u8; 4096 - 28],
 } // 4k fixed
 
+/// WAL file struct, encapsulates file header, entry metadata, file handle, etc.
 pub struct WalFile {
     pub header: Box<WalHeader>,
     pub wal_entry_metas: Vec<WalEntryMeta>,
@@ -83,6 +88,7 @@ pub struct WalFile {
 }
 
 impl WalFile {
+    /// Load WAL file header
     pub async fn load_wal_file_header(file: &mut File) -> Result<WalHeader> {
         let mut header: WalHeader = unsafe { std::mem::zeroed() };
         let data = unsafe {
@@ -99,6 +105,7 @@ impl WalFile {
         Ok(header)
     }
 
+    /// Load sealed WAL file (with footer)
     pub async fn load_sealed_wal_file(mut file: File, path: impl AsRef<Path>) -> Result<WalFile> {
         info!("load_sealed_wal_file at {:?}", path.as_ref());
         let header = Self::load_wal_file_header(&mut file).await?;
@@ -164,6 +171,7 @@ impl WalFile {
         })
     }
 
+    /// Load unsealed WAL file, scan entry headers one by one
     pub async fn load_unsealed_wal_file(mut file: File, path: impl AsRef<Path>) -> Result<WalFile> {
         info!("load_unsealed_wal_file at {:?}", path.as_ref());
         let header = Self::load_wal_file_header(&mut file).await?;
@@ -226,13 +234,14 @@ impl WalFile {
 
             next_entry_offset: wal_entry_offset,
 
-            start_index: metas.first().unwrap().index,
-            next_index: metas.last().unwrap().index + 1,
+            start_index: metas.first().map(|m| m.index).unwrap_or(0),
+            next_index: metas.last().map(|m| m.index + 1).unwrap_or(0),
 
             wal_entry_metas: metas,
         })
     }
 
+    /// Load WAL file (auto-detect sealed)
     pub async fn load_wal_file(path: impl AsRef<Path>, is_sealed: bool) -> Result<WalFile> {
         info!(
             "start load wal file, path: {}, is_sealed: {}",
@@ -261,6 +270,7 @@ impl WalFile {
         }
     }
 
+    /// Append a log entry
     pub async fn append_entry(&mut self, mut ent: Entry) -> Result<()> {
         if self.entry_len() >= MAX_META_COUNT {
             info!("wal file is full, length: {}", self.entry_len());
@@ -304,7 +314,10 @@ impl WalFile {
             buf.append(&mut entry_header_data.to_owned());
 
             let mut buf2 = vec![];
-            ent.encode(&mut buf2).unwrap();
+            if let Err(e) = ent.encode(&mut buf2) {
+                error!("encode entry failed: {e}");
+                bail!(WalError::FailedToWrite);
+            }
             buf.append(&mut buf2);
 
             buf
@@ -329,6 +342,7 @@ impl WalFile {
         Ok(())
     }
 
+    /// Create a new WAL file
     pub async fn create_new_wal_file(
         path: impl AsRef<Path>,
         start_version: u64,
@@ -386,6 +400,7 @@ impl WalFile {
         })
     }
 
+    /// Seal WAL file, write footer and entry index
     pub async fn seal(&mut self) -> Result<()> {
         let l = self.wal_entry_metas.len();
 
@@ -444,29 +459,34 @@ impl WalFile {
         Ok(())
     }
 
+    /// Get the index of the first log entry in the file
     pub fn first_version(&self) -> u64 {
         self.start_index
     }
 
+    /// Get the index of the next available log entry
     pub fn next_version(&self) -> u64 {
         self.next_index
     }
 
+    /// Get file name suffix (sequence number)
     pub fn suffix(&self) -> u64 {
-        let path = self.path.as_os_str().to_str().unwrap();
-        let suffix_str = path.split('.').last().unwrap();
-
-        suffix_str.parse().unwrap()
+        let path = self.path.as_os_str().to_str().expect("Invalid WAL file path");
+        let suffix_str = path.split('.').last().expect("No suffix found in WAL file name");
+        suffix_str.parse().expect("Failed to parse WAL file suffix as u64")
     }
 
+    /// Whether the file is sealed
     pub fn is_sealed(&self) -> bool {
         self.sealed
     }
 
+    /// Number of log entries in the current file
     pub fn entry_len(&self) -> u64 {
         self.wal_entry_metas.len() as u64
     }
 
+    /// Get log entries in range [start_version, end_version]
     pub async fn entries(
         &mut self,
         start_version: u64,
@@ -480,7 +500,7 @@ impl WalFile {
         let end_index = start_index + (end_version - start_version);
 
         info!("start_index: {start_index}, end_index: {end_index}");
-        let target_meta = &(self.wal_entry_metas)[start_index as usize..={ end_index as usize }];
+        let target_meta = &(self.wal_entry_metas)[start_index as usize..=end_index as usize];
 
         let mut ret = vec![];
         for m in target_meta.iter() {
@@ -497,9 +517,11 @@ impl WalFile {
             let entry_header: WalEntryHeader =
                 unsafe { std::ptr::read(buf[0..header_len].as_ptr() as *const _) };
 
-            let ent =
-                Entry::decode(&buf[header_len..header_len + entry_header.entry_length as usize])
-                    .unwrap();
+            let ent = Entry::decode(&buf[header_len..header_len + entry_header.entry_length as usize])
+                .map_err(|e| {
+                    error!("decode entry failed: {e}");
+                    WalError::FailedToRead
+                })?;
 
             ret.push(ent);
         }
@@ -507,6 +529,7 @@ impl WalFile {
         Ok(ret)
     }
 
+    /// Discard logs after next_version
     pub async fn discard(&mut self, next_version: u64) -> Result<()> {
         self.sealed = false;
         self.next_index = next_version;
@@ -515,7 +538,11 @@ impl WalFile {
             4096
         } else {
             let index = next_version - self.first_version() - 1;
-            self.wal_entry_metas[index as usize].entry_offset
+            if let Some(meta) = self.wal_entry_metas.get(index as usize) {
+                meta.entry_offset
+            } else {
+                4096
+            }
         };
 
         self.next_entry_offset = entry_offset;

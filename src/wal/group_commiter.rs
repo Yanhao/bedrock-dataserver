@@ -1,3 +1,7 @@
+//! GroupCommitter module
+//! Implements batch request aggregation and async processing to improve WAL write throughput and reduce latency.
+//! Supports custom batch size, commit interval, and is thread-safe.
+
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -9,6 +13,9 @@ use typed_builder::TypedBuilder;
 
 use crate::utils::R;
 
+/// Struct for request and notifier
+/// arg: request argument
+/// notifier: oneshot channel for async result notification
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub struct RequestAndNotifier<Arg, Ret> {
@@ -17,6 +24,13 @@ pub struct RequestAndNotifier<Arg, Ret> {
     notifier: Option<tokio::sync::oneshot::Sender<(bool, Ret)>>,
 }
 
+/// GroupCommitter
+/// - input_channel_length: input channel length
+/// - reap_group_size: max batch size per group
+/// - reap_interval: max aggregation delay
+/// - input: input channel
+/// - extra: extra parameter
+/// - stop_ch: stop signal
 #[derive(TypedBuilder)]
 pub struct GroupCommitter<Arg, Ret, Extra> {
     #[builder(default = 10240)]
@@ -43,6 +57,7 @@ where
     Arg: Sync + Send + Clone + 'static,
     Extra: Sync + Send + Clone + 'static,
 {
+    /// Submit a single request, returns (is last in batch, result)
     pub async fn r#do(&self, arg: Arg) -> Result<(bool, Ret)> {
         let (tx, rx) = tokio::sync::oneshot::channel();
         let req_with_notifier = RequestAndNotifier {
@@ -55,6 +70,7 @@ where
         Ok(rx.await?)
     }
 
+    /// Aggregate batch requests and call func to process, notify result via notifier
     async fn try_reap_request<Func, FuncRet>(
         mut request: Vec<RequestAndNotifier<Arg, Ret>>,
         func: Func,
@@ -68,14 +84,29 @@ where
         let res = func(extra, args).await;
 
         if let Some(mut tail) = request.pop() {
-            let _ = tail.notifier.take().unwrap().send((true, res.clone()));
+            match tail.notifier.take() {
+                Some(notifier) => {
+                    let _ = notifier.send((true, res.clone()));
+                }
+                None => {
+                    error!("GroupCommitter: tail notifier is None (should always be Some)");
+                }
+            }
         }
 
         for mut req in request.into_iter() {
-            let _ = req.notifier.take().unwrap().send((false, res.clone()));
+            match req.notifier.take() {
+                Some(notifier) => {
+                    let _ = notifier.send((false, res.clone()));
+                }
+                None => {
+                    error!("GroupCommitter: batch notifier is None (should always be Some)");
+                }
+            }
         }
     }
 
+    /// Start group commit background task, triggers func by timer or batch size
     pub fn start<Func, FuncRet>(&mut self, func: Func)
     where
         Func: Fn(Option<Extra>, Vec<Arg>) -> FuncRet + Send + Sync + Clone + 'static,
