@@ -1,0 +1,84 @@
+version: '3'
+
+networks:
+  bedrock-network:
+    external: true
+
+volumes:
+  data1:
+  data2:
+  data3:
+  data4:
+  data5:
+
+services:
+  # 使用统一配置的dataserver服务
+  dataserver-1:
+    build: .
+    container_name: dataserver-1
+    networks:
+      - bedrock-network
+    volumes:
+      - data1:/data
+      - ./config.toml:/etc/bedrock/dataserver.toml
+    ports:
+      - "8881:8888"
+    environment:
+      - RUST_LOG=info
+    command: ["/app/server", "--name", "dataserver-1"]
+
+  dataserver-2:
+    build: .
+    container_name: dataserver-2
+    networks:
+      - bedrock-network
+    volumes:
+      - data2:/data
+      - ./config.toml:/etc/bedrock/dataserver.toml
+    ports:
+      - "8882:8888"
+    environment:
+      - RUST_LOG=debug
+    command: ["/app/server", "--name", "dataserver-2"]
+
+  dataserver-3:
+    build: .
+    container_name: dataserver-3
+    networks:
+      - bedrock-network
+    volumes:
+      - data3:/data
+      - ./config.toml:/etc/bedrock/dataserver.toml
+    ports:
+      - "8883:8888"
+    environment:
+      - RUST_LOG=info
+    command: ["/app/server", "--name", "dataserver-3"]
+
+  dataserver-4:
+    build: .
+    container_name: dataserver-4
+    networks:
+      - bedrock-network
+    volumes:
+      - data4:/data
+      - ./config.toml:/etc/bedrock/dataserver.toml
+    ports:
+      - "8884:8888"
+    environment:
+      - RUST_LOG=info
+    command: ["/app/server", "--name", "dataserver-4"]
+
+  dataserver-5:
+    build: .
+    container_name: dataserver-5
+    networks:
+      - bedrock-network
+    volumes:
+      - data5:/data
+      - ./config.toml:/etc/bedrock/dataserver.toml
+    ports:
+      - "8885:8888"
+    environment:
+      - RUST_LOG=info
+    command: ["/app/server", "--name", "dataserver-5"]

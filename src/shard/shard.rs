@@ -197,7 +197,8 @@ impl Shard {
             .leader_change_ts
             .clone()
             .unwrap()
-            .into()
+            .try_into()
+            .unwrap()
     }
     pub fn replicates(&self) -> Vec<SocketAddr> {
         self.shard_meta
@@ -436,7 +437,12 @@ impl Shard {
         if resp.get_ref().is_old_leader {
             warn!("failed to append log, not leader");
             return Err(ShardError::NotLeaderWithTs(
-                resp.get_ref().last_leader_change_ts.r().clone().into(),
+                resp.get_ref()
+                    .last_leader_change_ts
+                    .r()
+                    .clone()
+                    .try_into()
+                    .unwrap(),
             ));
         }
 

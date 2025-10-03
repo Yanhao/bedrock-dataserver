@@ -123,8 +123,13 @@ impl DataService for RealDataServer {
         let shard_id = req.get_ref().shard_id;
         let shard = self.get_shard(shard_id).await?;
 
-        let leader_change_leader_ts: time::SystemTime =
-            req.get_ref().leader_change_ts.to_owned().unwrap().into();
+        let leader_change_leader_ts: time::SystemTime = req
+            .get_ref()
+            .leader_change_ts
+            .to_owned()
+            .unwrap()
+            .try_into()
+            .unwrap();
 
         if shard.leader_change_ts() > leader_change_leader_ts {
             let resp = Response::new(ShardAppendLogResponse {
@@ -249,7 +254,12 @@ impl DataService for RealDataServer {
         shard
             .update_membership(
                 true,
-                req.get_ref().leader_change_ts.to_owned().unwrap().into(),
+                req.get_ref()
+                    .leader_change_ts
+                    .to_owned()
+                    .unwrap()
+                    .try_into()
+                    .unwrap(),
                 Some(&socket_addrs),
             )
             .map_err(|_| Status::internal("update membership failed"))?;

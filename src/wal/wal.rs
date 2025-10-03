@@ -58,9 +58,18 @@ struct WalInner {
 impl WalInner {
     /// Get WAL file name suffix (sequence number)
     fn wal_file_suffix(path: impl AsRef<Path>) -> u64 {
-        let path = path.as_ref().as_os_str().to_str().expect("Invalid path string");
-        let suffix_str = path.split('.').last().expect("No suffix found in WAL file name");
-        suffix_str.parse().expect("Failed to parse WAL file suffix as u64")
+        let path = path
+            .as_ref()
+            .as_os_str()
+            .to_str()
+            .expect("Invalid path string");
+        let suffix_str = path
+            .split('.')
+            .last()
+            .expect("No suffix found in WAL file name");
+        suffix_str
+            .parse()
+            .expect("Failed to parse WAL file suffix as u64")
     }
 
     /// Generate WAL directory path for a shard
@@ -137,7 +146,10 @@ impl WalInner {
     /// Generate new WAL file path
     fn generate_new_wal_file_path(&self) -> PathBuf {
         if self.wal_files.is_empty() {
-            return self.dir.clone().join(String::from_str("wal.0").expect("Failed to create wal.0"));
+            return self
+                .dir
+                .clone()
+                .join(String::from_str("wal.0").expect("Failed to create wal.0"));
         }
 
         let suffix = self.wal_files.last().map(|f| f.suffix()).unwrap_or(0);
@@ -157,7 +169,13 @@ impl WalInner {
         }
 
         while self.wal_files.last().map(|f| f.next_version()).unwrap_or(0) > next_index {
-            if self.wal_files.last().map(|f| f.first_version()).unwrap_or(0) > next_index {
+            if self
+                .wal_files
+                .last()
+                .map(|f| f.first_version())
+                .unwrap_or(0)
+                > next_index
+            {
                 if let Some(wal_file) = self.wal_files.pop() {
                     if let Err(e) = std::fs::remove_file(&wal_file.path) {
                         error!("remove wal file failed: {:?}", e);
@@ -197,7 +215,9 @@ impl WalInner {
             bail!(WalError::EmptyWalFiles);
         }
 
-        if self.wal_files.len() == 1 && self.wal_files.first().map(|f| f.entry_len()).unwrap_or(0) <= 1 {
+        if self.wal_files.len() == 1
+            && self.wal_files.first().map(|f| f.entry_len()).unwrap_or(0) <= 1
+        {
             bail!(WalError::InvalidParameter);
         }
 
@@ -238,7 +258,7 @@ impl WalInner {
                 },
             );
 
-            let mut ents = file
+            let ents = file
                 .entries(
                     lo,
                     if hi < file.next_version() {
@@ -296,20 +316,29 @@ impl WalInner {
                 None => break,
             };
 
-            let need_new_file = self.wal_files.is_empty() || self.wal_files.last().map(|f| f.is_sealed()).unwrap_or(true);
+            let need_new_file = self.wal_files.is_empty()
+                || self.wal_files.last().map(|f| f.is_sealed()).unwrap_or(true);
             if need_new_file {
                 let path = self.generate_new_wal_file_path();
-                let new_wal_file = wal_file::WalFile::create_new_wal_file(path, self.next_index())
-                    .await?;
+                let new_wal_file =
+                    wal_file::WalFile::create_new_wal_file(path, self.next_index()).await?;
                 self.wal_files.push(new_wal_file);
             }
 
             debug!("append wal entry, index: {}", ent.index);
 
-            let last_mut = self.wal_files.last_mut().expect("WAL files should not be empty after creation");
+            let last_mut = self
+                .wal_files
+                .last_mut()
+                .expect("WAL files should not be empty after creation");
             if let Err(e) = last_mut.append_entry(ent.clone()).await {
                 if let Some(WalError::WalFileFull) = e.downcast_ref() {
-                    self.wal_files.last_mut().expect("WAL files should not be empty").seal().await.expect("Seal should not fail");
+                    self.wal_files
+                        .last_mut()
+                        .expect("WAL files should not be empty")
+                        .seal()
+                        .await
+                        .expect("Seal should not fail");
                     continue;
                 }
                 return Err(e);

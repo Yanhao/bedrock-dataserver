@@ -1,0 +1,6 @@
+work_dir= "/data"
+name = "dataserver-1"
+wal_dir= "/data/wal"
+data_dir= "/data/data"
+metaserver_url = "http://metaserver-1:1080"
+rpc_server_addr = "0.0.0.0:8888"

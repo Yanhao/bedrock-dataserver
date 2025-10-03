@@ -1,5 +1,7 @@
-use std::net::SocketAddr;
-use std::{fs::read_to_string, net::IpAddr};
+use std::{
+    fs::read_to_string,
+    net::{IpAddr, SocketAddr},
+};
 
 use anyhow::Result;
 use get_if_addrs::get_if_addrs;
@@ -15,6 +17,7 @@ pub static CONFIG: Lazy<parking_lot::RwLock<Configuration>> = Lazy::new(Default:
 
 #[derive(Deserialize, Debug, Clone, Default)]
 pub struct Configuration {
+    pub name: String,
     pub rpc_server_addr: Option<String>,
     pub metaserver_url: String,
 

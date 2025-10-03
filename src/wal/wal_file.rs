@@ -471,9 +471,18 @@ impl WalFile {
 
     /// Get file name suffix (sequence number)
     pub fn suffix(&self) -> u64 {
-        let path = self.path.as_os_str().to_str().expect("Invalid WAL file path");
-        let suffix_str = path.split('.').last().expect("No suffix found in WAL file name");
-        suffix_str.parse().expect("Failed to parse WAL file suffix as u64")
+        let path = self
+            .path
+            .as_os_str()
+            .to_str()
+            .expect("Invalid WAL file path");
+        let suffix_str = path
+            .split('.')
+            .last()
+            .expect("No suffix found in WAL file name");
+        suffix_str
+            .parse()
+            .expect("Failed to parse WAL file suffix as u64")
     }
 
     /// Whether the file is sealed
@@ -517,11 +526,12 @@ impl WalFile {
             let entry_header: WalEntryHeader =
                 unsafe { std::ptr::read(buf[0..header_len].as_ptr() as *const _) };
 
-            let ent = Entry::decode(&buf[header_len..header_len + entry_header.entry_length as usize])
-                .map_err(|e| {
-                    error!("decode entry failed: {e}");
-                    WalError::FailedToRead
-                })?;
+            let ent =
+                Entry::decode(&buf[header_len..header_len + entry_header.entry_length as usize])
+                    .map_err(|e| {
+                        error!("decode entry failed: {e}");
+                        WalError::FailedToRead
+                    })?;
 
             ret.push(ent);
         }

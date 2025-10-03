@@ -15,9 +15,9 @@ anyhow = "1"
 raft = { version = "0.6", default-features = false, features = ["prost-codec", "default-logger"] }
 tokio = { version = "1", features = ["full", "tracing"] }
 futures-util = "0.3"
-prost = "0.7"
-prost-types = "0.7"
-tonic = "0.4"
+prost = "0.12"
+prost-types = "0.12"
+tonic = "0.10"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 lazy_static = "1"

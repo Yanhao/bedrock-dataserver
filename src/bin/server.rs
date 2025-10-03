@@ -1,12 +1,10 @@
 #![feature(impl_trait_in_assoc_type)]
-#![feature(async_closure)]
-
 use std::env::set_current_dir;
 use std::path::Path;
 
 use anyhow::Result;
 use clap::Parser;
-use tokio::signal;
+use tokio::{select, signal};
 use tonic::transport::Server as GrpcServer;
 use tracing::{error, info};
 
@@ -46,6 +44,8 @@ struct Args {
     format: bool,
     #[arg(long)]
     format_dir: Option<String>,
+    #[arg(long)]
+    name: Option<String>,
 }
 
 #[tokio::main]
@@ -61,6 +61,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("starting dataserver...");
     init_config(&args.config)
         .inspect_err(|e| error!("failed to initialize configuration, err: {e}"))?;
+
+    if let Some(name) = args.name {
+        info!("overriding name from command line argument: {}", name);
+        CONFIG.write().name = name;
+    }
 
     let work_dir = CONFIG.read().work_dir.as_ref().unwrap().to_owned();
     set_current_dir(&work_dir)?;
@@ -79,8 +84,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         info!("stop grpc server");
     });
 
-    signal::ctrl_c().await?;
-    info!("ctrl-c pressed");
+    let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate())?;
+    select! {
+        _ = signal::ctrl_c() => {
+            info!("ctrl-c pressed");
+        },
+        _ = sigterm.recv() => {
+            info!("SIGTERM received");
+        },
+    };
 
     std::fs::remove_file(format!("{work_dir}/LOCK"))
         .inspect_err(|e| error!("failed to remove lock file, err {e}"))?;

@@ -5,9 +5,9 @@ use anyhow::Result;
 use idl_gen::replog_pb::Entry;
 
 mod group_commiter; // Group commit mechanism, improves write throughput
-mod wal;            // WAL main logic, log append, recovery, etc.
-mod wal_file;       // WAL file low-level read/write
-mod mem_log;        // In-memory log cache
+mod mem_log;
+mod wal; // WAL main logic, log append, recovery, etc.
+mod wal_file; // WAL file low-level read/write // In-memory log cache
 
 pub use wal::Wal;
 
