@@ -1,11 +1,8 @@
-use std::fs::{read_to_string, OpenOptions};
-use std::io::Write;
 use std::path::Path;
 
-use anyhow::{anyhow, ensure, Result};
+use anyhow::{anyhow, Result};
 use once_cell::sync::Lazy;
 use prost::Message;
-use serde::{Deserialize, Serialize};
 use sled;
 use tracing::{debug, warn};
 
@@ -14,14 +11,8 @@ use idl_gen::service_pb::ShardMeta;
 const METADATA_PATH: &str = "metadata.json";
 const METADATA_DIRECTORY: &str = "metadata";
 
-pub static METADATA: Lazy<parking_lot::RwLock<MetaData>> = Lazy::new(|| {
-    debug!("parse json metadata");
-
-    let json_raw = read_to_string(METADATA_PATH).expect("read metadata failed");
-    let m: DsMeta = serde_json::from_str(&json_raw).expect("parse metadata failed");
-
-    parking_lot::RwLock::new(MetaData::new(m, METADATA_DIRECTORY).unwrap())
-});
+pub static METADATA: Lazy<parking_lot::RwLock<MetaData>> =
+    Lazy::new(|| parking_lot::RwLock::new(MetaData::new(METADATA_DIRECTORY).unwrap()));
 
 pub trait Meta<T>
 where
@@ -34,47 +25,14 @@ where
     fn shard_iter(&self) -> T;
 }
 
-#[derive(Deserialize, Serialize, Clone)]
-pub struct DsMeta {
-    pub cluster_name: String,
-
-    pub metaserver_addrs: Vec<String>,
-    pub metaserver_addrs_update_ts: String,
-
-    pub metaserver_leader: String,
-    pub metaserver_leader_update_ts: String,
-}
-
 pub struct MetaData {
-    data: DsMeta,
     meta_db: sled::Db,
 }
 
 impl MetaData {
-    pub fn new(data: DsMeta, meta_dir: impl AsRef<Path>) -> Result<Self> {
+    pub fn new(meta_dir: impl AsRef<Path>) -> Result<Self> {
         let db = sled::open(meta_dir.as_ref()).unwrap();
-        Ok(Self { data, meta_db: db })
-    }
-
-    pub fn get_meta(&self) -> DsMeta {
-        self.data.clone()
-    }
-
-    pub fn save_meta(&mut self, json_meta: DsMeta) -> Result<()> {
-        let json_raw = serde_json::to_string(&json_meta).unwrap();
-
-        let mut mfile = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(METADATA_PATH)?;
-
-        let data = json_raw.as_bytes();
-        let sz = mfile.write(data).unwrap();
-        ensure!(sz == data.len(), "write partial data");
-
-        self.data = json_meta;
-
-        Ok(())
+        Ok(Self { meta_db: db })
     }
 
     fn shard_key(shard_id: u64) -> Vec<u8> {

@@ -16,17 +16,17 @@ pub use wal::Wal;
 pub trait WalTrait {
     /// Get log entries in range [lo, hi], up to max_size bytes
     async fn entries(
-        &self,
+        &mut self,
         lo: u64,
         hi: u64, /* lo..=hi */
         max_size: u64,
     ) -> Result<Vec<Entry>>;
 
     /// Append log entries, discard=true to drop old logs, returns last log index
-    async fn append(&self, ents: Entry, discard: bool) -> Result<u64 /* last_index */>;
+    async fn append(&mut self, ents: Vec<Entry>, discard: bool) -> Result<u64 /* last_index */>;
 
     /// Compact logs before compact_index
-    async fn compact(&self, compact_index: u64) -> Result<()>;
+    async fn compact(&mut self, compact_index: u64) -> Result<()>;
 
     /// Get the index of the first log entry
     async fn first_index(&self) -> u64;
