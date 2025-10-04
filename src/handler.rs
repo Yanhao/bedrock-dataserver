@@ -1,3 +1,4 @@
+use std::net::ToSocketAddrs;
 use std::sync::Arc;
 use std::time;
 
@@ -235,11 +236,10 @@ impl DataService for RealDataServer {
         &self,
         req: Request<TransferShardLeaderRequest>,
     ) -> Result<Response<TransferShardLeaderResponse>, Status> {
+        info!("transfer shard leader, req: {:?}", req.get_ref());
         if !param_check::transfer_shard_leader_param_check(req.get_ref()) {
             return Err(Status::invalid_argument(""));
         }
-
-        info!("transfer shard leader, req: {:?}", req.get_ref());
 
         let shard_id = req.get_ref().shard_id;
         let shard = self.get_shard(shard_id).await?;
@@ -248,7 +248,7 @@ impl DataService for RealDataServer {
             .get_ref()
             .replicates
             .iter()
-            .map(|x| x.parse().unwrap())
+            .map(|x| x.to_socket_addrs().unwrap().next().unwrap())
             .collect::<Vec<_>>();
 
         shard
@@ -406,6 +406,7 @@ impl DataService for RealDataServer {
         }
 
         info!("kvget, req: {:?}", req.get_ref());
+        info!("kvget: key len: {}", req.get_ref().key.len());
 
         let shard = self.get_shard(req.get_ref().shard_id).await?;
 
@@ -460,8 +461,8 @@ impl DataService for RealDataServer {
         }
 
         info!("kvset, req: {:?}", req.get_ref());
-        debug!("kvset: key len: {}", req.get_ref().key.len());
-        debug!("kvset: value len: {}", req.get_ref().value.len());
+        info!("kvset: key len: {}", req.get_ref().key.len());
+        info!("kvset: value len: {}", req.get_ref().value.len());
 
         let shard = self.get_shard(req.get_ref().shard_id).await?;
         if !shard.is_leader() {

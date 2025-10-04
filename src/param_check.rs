@@ -46,12 +46,6 @@ pub fn shard_install_snapshot_param_check(_req: &ShardInstallSnapshotRequest) ->
 }
 
 pub fn transfer_shard_leader_param_check(req: &TransferShardLeaderRequest) -> bool {
-    for addr in req.replicates.iter() {
-        if addr.parse::<SocketAddr>().is_err() {
-            return false;
-        }
-    }
-
     true
 }
 
