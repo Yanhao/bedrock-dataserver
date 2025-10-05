@@ -141,7 +141,7 @@ impl Shard {
             is_leader,
             create_ts: Some(std::time::SystemTime::now().into()),
             replicates_update_ts: Some(std::time::SystemTime::now().into()),
-            leader_change_ts: Some(std::time::SystemTime::now().into()),
+            leader_change_ts: Some(std::time::SystemTime::UNIX_EPOCH.into()),
 
             leader,
             replicates: replicates.into_iter().map(|r| r.to_string()).collect(),

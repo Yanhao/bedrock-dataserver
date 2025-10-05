@@ -142,7 +142,7 @@ impl MsClient {
         debug!("Using existing metaserver connection: {}", url);
         let resp = match conn.info(InfoRequest {}).await {
             Ok(resp) => {
-                info!("response: {:#?}", resp);
+                // info!("response: {:#?}", resp);
                 resp.into_inner()
             }
             Err(e) => {
@@ -281,7 +281,7 @@ impl MsClient {
                 big_shards: vec![],
                 timestamp: Some(std::time::SystemTime::now().into()),
             };
-            info!("heartbeat: req: {:#?}", req);
+            // info!("heartbeat: req: {:#?}", req);
             req
         });
 
