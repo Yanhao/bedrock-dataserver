@@ -131,13 +131,14 @@ impl Shard {
         replicates: Vec<SocketAddr>,
         next_index: u64,
         key_range: Range<Vec<u8>>,
+        is_leader: bool,
     ) -> Result<Self> {
         SledStore::create(shard_id).await?;
         Wal::create(shard_id).await?;
 
         let meta = ShardMeta {
             shard_id,
-            is_leader: false,
+            is_leader,
             create_ts: Some(std::time::SystemTime::now().into()),
             replicates_update_ts: Some(std::time::SystemTime::now().into()),
             leader_change_ts: Some(std::time::SystemTime::now().into()),

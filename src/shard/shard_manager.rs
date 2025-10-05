@@ -60,6 +60,7 @@ impl ShardManager {
                 shard.replicates(),
                 shard.next_index().await,
                 start_key.clone()..end_key.clone(),
+                shard.is_leader(),
             )
             .await?,
         );

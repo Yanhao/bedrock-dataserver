@@ -38,7 +38,7 @@ services:
     ports:
       - "8882:8888"
     environment:
-      - RUST_LOG=debug
+      - RUST_LOG=info
     command: ["/app/server", "--name", "dataserver-2"]
 
   dataserver-3:
